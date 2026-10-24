@@ -1,0 +1,338 @@
+name: All-in-one DevOps and security
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit (report), restrict (fail), or advanced (report and attempt dependency PRs)"
+        type: string
+        default: audit
+      trivy:
+        description: Scan vulnerabilities, secrets, and infrastructure misconfiguration
+        type: boolean
+        default: true
+      versions:
+        description: Check dependency versions, including Actions and Terraform providers
+        type: boolean
+        default: true
+      lint:
+        description: Run Super-Linter on the repository
+        type: boolean
+        default: true
+      python:
+        description: Install Python requirements and run tests
+        type: boolean
+        default: false
+      docker:
+        description: Build a Docker image without pushing it
+        type: boolean
+        default: false
+      terraform:
+        description: Check formatting and validate Terraform without a backend
+        type: boolean
+        default: false
+      python-version:
+        type: string
+        default: "3.12"
+      python-requirements:
+        description: Optional requirements file; an empty value skips installation
+        type: string
+        default: ""
+      python-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: python -m unittest discover -v
+      docker-context:
+        type: string
+        default: "."
+      dockerfile:
+        type: string
+        default: Dockerfile
+      terraform-directory:
+        description: Terraform root module to validate
+        type: string
+        default: "."
+      terraform-version:
+        type: string
+        default: latest
+      severity:
+        description: Comma-separated Trivy severity levels that count as findings
+        type: string
+        default: HIGH,CRITICAL
+    secrets:
+      renovate-token:
+        description: Optional bot PAT or GitHub App token for advanced-mode dependency PRs
+        required: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  configuration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate mode
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          case "$MODE" in
+            audit|restrict|advanced) ;;
+            *) echo "::error::mode must be audit, restrict, or advanced"; exit 1 ;;
+          esac
+
+  trivy:
+    needs: configuration
+    if: inputs.trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan repository
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: ${{ inputs.severity }}
+          exit-code: "1"
+          format: table
+
+  versions:
+    needs: configuration
+    if: inputs.versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Look up dependency updates at the checked-out revision
+        env:
+          GITHUB_COM_TOKEN: ${{ github.token }}
+        run: |
+          printf '{}\n' > "$RUNNER_TEMP/action-devops-renovate-config.json"
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$RUNNER_TEMP:/tmp" --workdir /workspace \
+            --env GITHUB_COM_TOKEN \
+            --env LOG_FILE=/tmp/action-devops-renovate.json \
+            --env LOG_FILE_LEVEL=debug \
+            --env RENOVATE_CONFIG_FILE=/tmp/action-devops-renovate-config.json \
+            --env RENOVATE_ONBOARDING=false \
+            --env RENOVATE_ALLOW_SCRIPTS=false \
+            --env RENOVATE_IGNORE_SCRIPTS=true \
+            --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
+            ghcr.io/renovatebot/renovate:44.167.5 \
+            --platform=local --dry-run=lookup
+      - name: Report outdated dependencies
+        env:
+          REPORT: ${{ runner.temp }}/action-devops-renovate.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          found = False
+          updates = []
+          errors = []
+          with open(os.environ["REPORT"], encoding="utf-8") as report:
+              for line in report:
+                  record = json.loads(line)
+                  if record.get("level", 0) >= 50:
+                      errors.append(record.get("msg", "Renovate error"))
+                  if record.get("msg") != "packageFiles with updates":
+                      continue
+                  found = True
+                  for manager, files in record["config"].items():
+                      for package in files:
+                          for dep in package.get("deps", []):
+                              if dep.get("warnings") or dep.get("skipReason") == "lookup-failed":
+                                  errors.append(f"Lookup failed: {dep.get('depName', manager)}")
+                              for update in dep.get("updates", []):
+                                  updates.append(
+                                      f"{package['packageFile']}: {dep.get('depName', manager)} "
+                                      f"{dep.get('currentValue', '?')} -> "
+                                      f"{update.get('newValue', update.get('newVersion', '?'))}"
+                                  )
+          if not found:
+              errors.append("Renovate did not produce a dependency lookup report")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Dependency versions\n\n")
+              for message in updates + errors:
+                  # Keep dependency metadata out of Markdown/HTML markup.
+                  summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
+              if not updates and not errors:
+                  summary.write("No supported dependency updates found.\n")
+          print(f"{len(updates)} available updates; {len(errors)} lookup errors")
+          sys.exit(1 if updates or errors else 0)
+          PY
+
+  lint:
+    needs: configuration
+    if: inputs.lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: super-linter/super-linter@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          ENABLE_GITHUB_ACTIONS_GROUP_TITLE: true
+          MULTI_STATUS: false
+          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
+
+  python:
+    needs: configuration
+    if: inputs.python
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Install requirements
+        if: inputs.python-requirements != ''
+        env:
+          REQUIREMENTS: ${{ inputs.python-requirements }}
+        run: python -m pip install -r "$REQUIREMENTS"
+      - name: Run Python tests
+        env:
+          TEST_COMMAND: ${{ inputs.python-command }}
+        run: bash -e -o pipefail -c "$TEST_COMMAND"
+
+  docker:
+    needs: configuration
+    if: inputs.docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        env:
+          CONTEXT: ${{ inputs.docker-context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: docker build --file "$DOCKERFILE" --tag action-devops-check:local -- "$CONTEXT"
+
+  terraform:
+    needs: configuration
+    if: inputs.terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+      - name: Format and validate root module
+        env:
+          TF_DIRECTORY: ${{ inputs.terraform-directory }}
+          TF_IN_AUTOMATION: "true"
+          TF_INPUT: "false"
+        run: |
+          cd -- "$TF_DIRECTORY" || exit 1
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+  fixes:
+    needs: configuration
+    if: >-
+      inputs.mode == 'advanced' && inputs.versions &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Check bot credentials
+        env:
+          BOT_TOKEN: ${{ secrets.renovate-token }}
+        run: |
+          if [[ -z "$BOT_TOKEN" ]]; then
+            echo "::error::Pass renovate-token to enable dependency fix PRs"
+            exit 1
+          fi
+      - name: Attempt dependency fix PRs
+        uses: renovatebot/github-action@a63d9a7bc606f7336fd20b47f2f32259a35e6213 # v46.3.9
+        with:
+          token: ${{ secrets.renovate-token }}
+          renovate-version: 44.167.5
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: optional
+          RENOVATE_AUTOMERGE: "false"
+          RENOVATE_FORCE: '{"automerge": false, "platformAutomerge": false}'
+          RENOVATE_ALLOW_SCRIPTS: "false"
+          RENOVATE_IGNORE_SCRIPTS: "true"
+          RENOVATE_ALLOWED_COMMANDS: "[]"
+          RENOVATE_PR_HOURLY_LIMIT: "2"
+
+  summary:
+    needs: [configuration, trivy, versions, lint, python, docker, terraform, fixes]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Summarize results and enforce policy
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          failures = []
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## All-in-one results\n\n| Check | Result |\n| --- | --- |\n")
+              for name, job in results.items():
+                  result = job.get("outputs", {}).get("result") or job["result"]
+                  summary.write(f"| {name} | {result} |\n")
+                  if result not in ("success", "skipped"):
+                      failures.append(name)
+              summary.write("\nDetailed findings are in each job's logs and summaries.\n")
+          invalid = results["configuration"]["result"] != "success"
+          sys.exit(1 if invalid or (os.environ["MODE"] == "restrict" and failures) else 0)
+          PY
