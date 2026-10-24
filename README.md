@@ -36,6 +36,7 @@ called directly with the same inputs.
 | `terraform-validate.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml` |
 | `checkov-scan.sh`, `codeql-language.sh`, `github-alerts.sh` | `security.yml` |
 | `renovate-lookup.sh`, `renovate-report.py` | `dependencies.yml` |
+| `create-release.sh` | `release.yml`, which publishes releases of this repository |
 
 Jobs that need scripts check out `.github/scripts` from this repository at the
 running workflow's own commit (`job.workflow_repository` and `job.workflow_sha`),
@@ -58,7 +59,7 @@ permissions:
 
 jobs:
   checks:
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
     with:
       mode: audit
       python: true
@@ -69,7 +70,8 @@ jobs:
       terraform-directory: infrastructure
 ```
 
-Replace `main` with a reviewed full commit SHA for production use. The workflow
+Pin to a release tag, or to that tag's full commit SHA for production use; see
+[releases](docs/releases/README.md) for versions and change logs. The workflow
 checks out the **calling repository** at the event revision (including the PR
 merge revision), not this repository. It runs on GitHub-hosted Ubuntu runners.
 
@@ -147,7 +149,7 @@ jobs:
       actions: read          # needed for private repositories
       contents: read
       security-events: write # upload to code scanning
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
     with:
       codeql: true
       codeql-language: python
@@ -179,7 +181,7 @@ and do not need this secret:
 ```yaml
 jobs:
   checks:
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
     with:
       mode: advanced
     secrets:
