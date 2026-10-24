@@ -1,0 +1,222 @@
+name: Security
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit or advanced (report) or restrict (fail)"
+        type: string
+        default: audit
+      trivy:
+        description: Scan vulnerabilities, secrets, and infrastructure misconfiguration
+        type: boolean
+        default: true
+      iac-security:
+        description: Run Checkov security and best-practice checks on IaC
+        type: boolean
+        default: true
+      codeql:
+        description: Opt in to GitHub CodeQL analysis and code-scanning uploads
+        type: boolean
+        default: false
+      codeql-language:
+        description: One CodeQL language present in the repository; call separately for other languages
+        type: string
+        default: javascript-typescript
+      dependabot:
+        description: Check existing open high and critical GitHub Dependabot alerts
+        type: boolean
+        default: false
+      dependency-review:
+        description: Review newly introduced vulnerable dependencies on pull requests
+        type: boolean
+        default: false
+      secret-scanning:
+        description: Check existing open GitHub secret-scanning alerts
+        type: boolean
+        default: false
+      severity:
+        description: Comma-separated Trivy severity levels that count as findings
+        type: string
+        default: HIGH,CRITICAL
+    secrets:
+      github-security-token:
+        description: Optional read-only token for enabled Dependabot and secret-scanning alert APIs
+        required: false
+    outputs:
+      trivy:
+        value: ${{ jobs.trivy.outputs.result }}
+      iac-security:
+        value: ${{ jobs.iac-security.outputs.result }}
+      codeql:
+        value: ${{ jobs.codeql.outputs.result }}
+      dependabot:
+        value: ${{ jobs.dependabot.outputs.result }}
+      dependency-review:
+        value: ${{ jobs.dependency-review.outputs.result }}
+      secret-scanning:
+        value: ${{ jobs.secret-scanning.outputs.result }}
+
+# No workflow-level permissions: codeql inherits the caller's token so that
+# callers not using CodeQL never have to grant security-events: write. Every
+# other job sets its own minimal permissions.
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  trivy:
+    if: inputs.trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan repository
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: ${{ inputs.severity }}
+          exit-code: "1"
+          format: table
+
+  iac-security:
+    if: inputs.iac-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Checkov
+        run: |
+          python3 -m venv "$RUNNER_TEMP/checkov"
+          "$RUNNER_TEMP/checkov/bin/python" -m pip install --disable-pip-version-check checkov==3.3.30
+      - name: Scan infrastructure as code
+        run: >-
+          "$RUNNER_TEMP/checkov/bin/checkov"
+          --directory .
+          --framework terraform,cloudformation,arm,bicep
+          --compact
+
+  codeql:
+    if: inputs.codeql
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Validate language
+        env:
+          CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
+        run: |
+          case "$CODEQL_LANGUAGE" in
+            javascript-typescript|python|ruby|c-cpp|go|java-kotlin|csharp) ;;
+            *) echo "::error::codeql-language must be one supported language; see README"; exit 1 ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: ${{ inputs.codeql-language }}
+          queries: security-extended
+          build-mode: ${{ contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language) && 'autobuild' || 'none' }}
+      - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        if: contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language)
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          category: /language:${{ inputs.codeql-language }}
+
+  dependabot:
+    if: inputs.dependabot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions: {}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Check open Dependabot alerts
+        env:
+          GH_TOKEN: ${{ secrets.github-security-token }}
+          GH_HOST: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Pass github-security-token with Dependabot alerts read permission"
+            exit 1
+          fi
+          export GH_HOST="${GH_HOST#*://}"
+          # gh rejects --slurp combined with --jq, so count with jq.
+          count=$(gh api --paginate --slurp \
+            "repos/$REPOSITORY/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
+            | jq '[.[][]] | length')
+          echo "Open high/critical Dependabot alerts: $count" >> "$GITHUB_STEP_SUMMARY"
+          if (( count > 0 )); then
+            echo "::error::Open high/critical Dependabot alerts require attention"
+            exit 1
+          fi
+
+  dependency-review:
+    if: inputs.dependency-review && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+
+  secret-scanning:
+    if: inputs.secret-scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions: {}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Check open secret-scanning alerts
+        env:
+          GH_TOKEN: ${{ secrets.github-security-token }}
+          GH_HOST: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Pass github-security-token with Secret scanning alerts read permission"
+            exit 1
+          fi
+          export GH_HOST="${GH_HOST#*://}"
+          # gh rejects --slurp combined with --jq, so count with jq.
+          count=$(gh api --paginate --slurp \
+            "repos/$REPOSITORY/secret-scanning/alerts?state=open&per_page=100" \
+            | jq '[.[][]] | length')
+          echo "Open secret-scanning alerts: $count" >> "$GITHUB_STEP_SUMMARY"
+          if (( count > 0 )); then
+            echo "::error::Open secret-scanning alerts require attention"
+            exit 1
+          fi
