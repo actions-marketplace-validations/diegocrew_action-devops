@@ -1,0 +1,38 @@
+"""Report outdated dependencies from a Renovate lookup log. Env: REPORT."""
+import json
+import os
+import sys
+
+found = False
+updates = []
+errors = []
+with open(os.environ["REPORT"], encoding="utf-8") as report:
+    for line in report:
+        record = json.loads(line)
+        if record.get("level", 0) >= 50:
+            errors.append(record.get("msg", "Renovate error"))
+        if record.get("msg") != "packageFiles with updates":
+            continue
+        found = True
+        for manager, files in record["config"].items():
+            for package in files:
+                for dep in package.get("deps", []):
+                    if dep.get("warnings") or dep.get("skipReason") == "lookup-failed":
+                        errors.append(f"Lookup failed: {dep.get('depName', manager)}")
+                    for update in dep.get("updates", []):
+                        updates.append(
+                            f"{package['packageFile']}: {dep.get('depName', manager)} "
+                            f"{dep.get('currentValue', '?')} -> "
+                            f"{update.get('newValue', update.get('newVersion', '?'))}"
+                        )
+if not found:
+    errors.append("Renovate did not produce a dependency lookup report")
+with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+    summary.write("## Dependency versions\n\n")
+    for message in updates + errors:
+        # Keep dependency metadata out of Markdown/HTML markup.
+        summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
+    if not updates and not errors:
+        summary.write("No supported dependency updates found.\n")
+print(f"{len(updates)} available updates; {len(errors)} lookup errors")
+sys.exit(1 if updates or errors else 0)

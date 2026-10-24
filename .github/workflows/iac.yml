@@ -64,16 +64,22 @@ jobs:
         with:
           terraform_version: ${{ inputs.terraform-version }}
           terraform_wrapper: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Format and validate root module
         env:
           TF_DIRECTORY: ${{ inputs.terraform-directory }}
-          TF_IN_AUTOMATION: "true"
-          TF_INPUT: "false"
-        run: |
-          cd -- "$TF_DIRECTORY" || exit 1
-          terraform fmt -check -recursive
-          terraform init -backend=false -input=false
-          terraform validate -no-color
+        run: '"$RUNNER_TEMP/action-devops-scripts/terraform-validate.sh"'
 
   bicep:
     if: inputs.bicep
@@ -88,32 +94,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Bicep CLI
-        run: az bicep install
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Compile Bicep templates
         env:
           BICEP_DIRECTORY: ${{ inputs.bicep-directory }}
-        run: |
-          if [[ ! -d "$BICEP_DIRECTORY" ]]; then
-            echo "::error::Bicep directory does not exist: $BICEP_DIRECTORY"
-            exit 1
-          fi
-          mapfile -d '' templates < <(find "$BICEP_DIRECTORY" -type f -name '*.bicep' -print0)
-          mapfile -d '' parameters < <(find "$BICEP_DIRECTORY" -type f -name '*.bicepparam' -print0)
-          if (( ${#templates[@]} == 0 && ${#parameters[@]} == 0 )); then
-            echo "::error::No .bicep or .bicepparam files found in $BICEP_DIRECTORY"
-            exit 1
-          fi
-          for template in "${templates[@]}"; do
-            echo "::group::Compile $template"
-            az bicep build --file "$template" --outfile "$RUNNER_TEMP/template.json"
-            echo "::endgroup::"
-          done
-          for parameter_file in "${parameters[@]}"; do
-            echo "::group::Compile $parameter_file"
-            az bicep build-params --file "$parameter_file" --outfile "$RUNNER_TEMP/parameters.json"
-            echo "::endgroup::"
-          done
+        run: '"$RUNNER_TEMP/action-devops-scripts/bicep-build.sh"'
 
   cloudformation:
     if: inputs.cloudformation
@@ -128,21 +124,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install cfn-lint
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
         run: |
-          python3 -m venv "$RUNNER_TEMP/cfn-lint"
-          "$RUNNER_TEMP/cfn-lint/bin/python" -m pip install --disable-pip-version-check cfn-lint==1.58.0
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Lint CloudFormation templates
         env:
           CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}
-        run: |
-          if [[ ! -d "$CFN_DIRECTORY" ]]; then
-            echo "::error::CloudFormation directory does not exist: $CFN_DIRECTORY"
-            exit 1
-          fi
-          mapfile -d '' templates < <(find "$CFN_DIRECTORY" -type f \( -iname '*.yaml' -o -iname '*.yml' -o -iname '*.json' -o -iname '*.template' \) -print0)
-          if (( ${#templates[@]} == 0 )); then
-            echo "::error::No YAML, JSON, or .template CloudFormation templates found in $CFN_DIRECTORY"
-            exit 1
-          fi
-          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" "${templates[@]}"
+        run: '"$RUNNER_TEMP/action-devops-scripts/cloudformation-lint.sh"'

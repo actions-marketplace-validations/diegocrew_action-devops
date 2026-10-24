@@ -129,14 +129,22 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Validate mode
         env:
           MODE: ${{ inputs.mode }}
-        run: |
-          case "$MODE" in
-            audit|restrict|advanced) ;;
-            *) echo "::error::mode must be audit, restrict, or advanced"; exit 1 ;;
-          esac
+        run: '"$RUNNER_TEMP/action-devops-scripts/validate-config.sh"'
 
   quality:
     needs: configuration
@@ -218,38 +226,20 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Summarize results and enforce policy
         env:
           RESULTS: ${{ toJSON(needs) }}
           MODE: ${{ inputs.mode }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import sys
-
-          results = json.loads(os.environ["RESULTS"])
-          failures = []
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("## All-in-one results\n\n| Group | Check | Result |\n| --- | --- | --- |\n")
-              for group, job in results.items():
-                  if group == "configuration":
-                      continue
-                  # Each group reports its checks' job.status; disabled checks are empty.
-                  checks = {name: value or "skipped" for name, value in (job.get("outputs") or {}).items()}
-                  if job["result"] in ("failure", "cancelled") and not any(
-                      value not in ("success", "skipped") for value in checks.values()
-                  ):
-                      checks["(workflow)"] = job["result"]
-                  if not checks:
-                      checks["(all)"] = job["result"]
-                  for name, result in checks.items():
-                      summary.write(f"| {group} | {name} | {result} |\n")
-                      if result not in ("success", "skipped"):
-                          failures.append(f"{group}/{name}")
-              summary.write("\nDetailed findings are in each job's logs and summaries.\n")
-          invalid = results["configuration"]["result"] != "success"
-          if failures:
-              print("Failed checks: " + ", ".join(failures))
-          sys.exit(1 if invalid or (os.environ["MODE"] == "restrict" and failures) else 0)
-          PY
+        run: python3 "$RUNNER_TEMP/action-devops-scripts/summarize.py"

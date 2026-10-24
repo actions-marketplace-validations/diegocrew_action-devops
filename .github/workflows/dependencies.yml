@@ -39,67 +39,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Look up dependency updates at the checked-out revision
         env:
           GITHUB_COM_TOKEN: ${{ github.token }}
-        run: |
-          printf '{}\n' > "$RUNNER_TEMP/action-devops-renovate-config.json"
-          docker run --rm --user "$(id -u):$(id -g)" \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
-            --volume "$RUNNER_TEMP:/tmp" --workdir /workspace \
-            --env GITHUB_COM_TOKEN \
-            --env LOG_FILE=/tmp/action-devops-renovate.json \
-            --env LOG_FILE_LEVEL=debug \
-            --env RENOVATE_CONFIG_FILE=/tmp/action-devops-renovate-config.json \
-            --env RENOVATE_ONBOARDING=false \
-            --env RENOVATE_ALLOW_SCRIPTS=false \
-            --env RENOVATE_IGNORE_SCRIPTS=true \
-            --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
-            ghcr.io/renovatebot/renovate:44.167.5 \
-            --platform=local --dry-run=lookup
+        run: '"$RUNNER_TEMP/action-devops-scripts/renovate-lookup.sh"'
       - name: Report outdated dependencies
         env:
           REPORT: ${{ runner.temp }}/action-devops-renovate.json
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import sys
-
-          found = False
-          updates = []
-          errors = []
-          with open(os.environ["REPORT"], encoding="utf-8") as report:
-              for line in report:
-                  record = json.loads(line)
-                  if record.get("level", 0) >= 50:
-                      errors.append(record.get("msg", "Renovate error"))
-                  if record.get("msg") != "packageFiles with updates":
-                      continue
-                  found = True
-                  for manager, files in record["config"].items():
-                      for package in files:
-                          for dep in package.get("deps", []):
-                              if dep.get("warnings") or dep.get("skipReason") == "lookup-failed":
-                                  errors.append(f"Lookup failed: {dep.get('depName', manager)}")
-                              for update in dep.get("updates", []):
-                                  updates.append(
-                                      f"{package['packageFile']}: {dep.get('depName', manager)} "
-                                      f"{dep.get('currentValue', '?')} -> "
-                                      f"{update.get('newValue', update.get('newVersion', '?'))}"
-                                  )
-          if not found:
-              errors.append("Renovate did not produce a dependency lookup report")
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("## Dependency versions\n\n")
-              for message in updates + errors:
-                  # Keep dependency metadata out of Markdown/HTML markup.
-                  summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
-              if not updates and not errors:
-                  summary.write("No supported dependency updates found.\n")
-          print(f"{len(updates)} available updates; {len(errors)} lookup errors")
-          sys.exit(1 if updates or errors else 0)
-          PY
+        run: python3 "$RUNNER_TEMP/action-devops-scripts/renovate-report.py"
 
   fixes:
     if: >-

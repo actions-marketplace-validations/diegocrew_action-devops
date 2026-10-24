@@ -102,16 +102,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install Checkov
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
         run: |
-          python3 -m venv "$RUNNER_TEMP/checkov"
-          "$RUNNER_TEMP/checkov/bin/python" -m pip install --disable-pip-version-check checkov==3.3.30
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Scan infrastructure as code
-        run: >-
-          "$RUNNER_TEMP/checkov/bin/checkov"
-          --directory .
-          --framework terraform,cloudformation,arm,bicep
-          --compact
+        run: '"$RUNNER_TEMP/action-devops-scripts/checkov-scan.sh"'
 
   codeql:
     if: inputs.codeql
@@ -121,17 +125,25 @@ jobs:
     outputs:
       result: ${{ job.status }}
     steps:
-      - name: Validate language
-        env:
-          CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
-        run: |
-          case "$CODEQL_LANGUAGE" in
-            javascript-typescript|python|ruby|c-cpp|go|java-kotlin|csharp) ;;
-            *) echo "::error::codeql-language must be one supported language; see README"; exit 1 ;;
-          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      - name: Validate language
+        env:
+          CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/codeql-language.sh"'
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: ${{ inputs.codeql-language }}
@@ -152,26 +164,24 @@ jobs:
     outputs:
       result: ${{ job.status }}
     steps:
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Check open Dependabot alerts
         env:
           GH_TOKEN: ${{ secrets.github-security-token }}
           GH_HOST: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::Pass github-security-token with Dependabot alerts read permission"
-            exit 1
-          fi
-          export GH_HOST="${GH_HOST#*://}"
-          # gh rejects --slurp combined with --jq, so count with jq.
-          count=$(gh api --paginate --slurp \
-            "repos/$REPOSITORY/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
-            | jq '[.[][]] | length')
-          echo "Open high/critical Dependabot alerts: $count" >> "$GITHUB_STEP_SUMMARY"
-          if (( count > 0 )); then
-            echo "::error::Open high/critical Dependabot alerts require attention"
-            exit 1
-          fi
+        run: '"$RUNNER_TEMP/action-devops-scripts/github-alerts.sh" dependabot'
 
   dependency-review:
     if: inputs.dependency-review && github.event_name == 'pull_request'
@@ -200,23 +210,21 @@ jobs:
     outputs:
       result: ${{ job.status }}
     steps:
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
       - name: Check open secret-scanning alerts
         env:
           GH_TOKEN: ${{ secrets.github-security-token }}
           GH_HOST: ${{ github.server_url }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::Pass github-security-token with Secret scanning alerts read permission"
-            exit 1
-          fi
-          export GH_HOST="${GH_HOST#*://}"
-          # gh rejects --slurp combined with --jq, so count with jq.
-          count=$(gh api --paginate --slurp \
-            "repos/$REPOSITORY/secret-scanning/alerts?state=open&per_page=100" \
-            | jq '[.[][]] | length')
-          echo "Open secret-scanning alerts: $count" >> "$GITHUB_STEP_SUMMARY"
-          if (( count > 0 )); then
-            echo "::error::Open secret-scanning alerts require attention"
-            exit 1
-          fi
+        run: '"$RUNNER_TEMP/action-devops-scripts/github-alerts.sh" secret-scanning'
