@@ -32,7 +32,12 @@ uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
 
 3. The `Release` workflow (`.github/workflows/release.yml`) creates the GitHub
    release from the notes file. Pushing a tag without a notes file fails the
-   workflow. Re-running it after editing the notes updates the release text.
+   workflow.
+
+To fix published release text, edit the notes file on `main`, then run the
+`Release` workflow manually (Actions → Release → Run workflow) with the existing
+tag. It republishes that release with the notes from `main`. Re-running the
+original tag run would reuse the old notes from the tagged commit.
 
 ## Notes template
 
@@ -50,4 +55,5 @@ One-paragraph summary.
 ## Upgrading
 ```
 
-Leave out empty sections.
+Leave out empty sections. Write each paragraph and list item on a single line:
+GitHub release pages show every line break in the notes as a break.
