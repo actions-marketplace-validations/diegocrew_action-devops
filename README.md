@@ -1,8 +1,16 @@
 # action-devops
 
-Reusable, parallel DevOps and security checks. `.github/workflows/allinone.yml`
-is only configuration: it switches checks on or off and calls one reusable
-workflow per group, so updating a check means editing only its group file.
+Reusable, parallel DevOps and security checks, in three layers:
+
+1. `.github/workflows/allinone.yml` is only configuration: it switches checks
+   on or off and calls one reusable workflow per group.
+2. Each group workflow in `.github/workflows/` runs its checks as parallel jobs.
+3. Check logic lives in `.github/scripts/`, one script per check. Workflows
+   only set up tools, pass inputs as environment variables, and call scripts
+   or pinned actions.
+
+Updating a check means editing its script or its group file, never the
+orchestrator.
 Call it at **job level**, not as a step: a composite action cannot create
 parallel jobs.
 
@@ -19,6 +27,21 @@ A group with every check off is skipped. `allinone.yml` calls the groups with
 `$/.github/workflows/...`, which resolves to this repository at the same commit,
 so pinning `allinone.yml` to a SHA pins every group too. Each group can also be
 called directly with the same inputs.
+
+| Script | Used by |
+| --- | --- |
+| `validate-config.sh` | `allinone.yml` configuration |
+| `summarize.py` | `allinone.yml` summary |
+| `python-tests.sh`, `docker-build.sh` | `build-test.yml` |
+| `terraform-validate.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml` |
+| `checkov-scan.sh`, `codeql-language.sh`, `github-alerts.sh` | `security.yml` |
+| `renovate-lookup.sh`, `renovate-report.py` | `dependencies.yml` |
+
+Jobs that need scripts check out `.github/scripts` from this repository at the
+running workflow's own commit (`job.workflow_repository` and `job.workflow_sha`),
+then move them to `$RUNNER_TEMP` so they never reach Docker build contexts,
+scanners, or tests in the caller's workspace. Scripts read inputs only from
+environment variables and fail with a `::error::` annotation on bad input.
 
 ## Use from any repository
 
@@ -182,7 +205,10 @@ alert jobs, which do not check out code, receive `github-security-token`. `pytho
 shell command and must come from trusted workflow configuration, never event
 titles, branch names, or other untrusted input.
 
-Checkouts do not persist credentials. The separate advanced-mode bot job does
+Checkouts do not persist credentials. Script checkouts use the caller's
+`GITHUB_TOKEN`, which can read this public repository. A caller's token cannot
+read a private copy of this repository, so keep it public or the script checkout
+fails. The separate advanced-mode bot job does
 not check out or execute test code and disables Renovate package scripts and
 post-upgrade commands. The caller must still trust the default branch and its
 Renovate configuration. Third-party actions are pinned to commit SHAs; Renovate
