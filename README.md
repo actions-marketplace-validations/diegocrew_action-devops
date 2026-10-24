@@ -1,8 +1,24 @@
 # action-devops
 
-Reusable, parallel DevOps and security checks, configured through
-`.github/workflows/allinone.yml`. Call it at **job level**, not as a step: a
-composite action cannot create parallel jobs.
+Reusable, parallel DevOps and security checks. `.github/workflows/allinone.yml`
+is only configuration: it switches checks on or off and calls one reusable
+workflow per group, so updating a check means editing only its group file.
+Call it at **job level**, not as a step: a composite action cannot create
+parallel jobs.
+
+| Workflow | Checks |
+| --- | --- |
+| `allinone.yml` | Validates `mode`, calls the groups below in parallel, and summarizes |
+| `quality.yml` | `lint` |
+| `build-test.yml` | `python`, `docker` |
+| `iac.yml` | `terraform`, `bicep`, `cloudformation` |
+| `security.yml` | `trivy`, `iac-security`, `codeql`, `dependabot`, `dependency-review`, `secret-scanning` |
+| `dependencies.yml` | `versions`, plus advanced-mode fix PRs |
+
+A group with every check off is skipped. `allinone.yml` calls the groups with
+`$/.github/workflows/...`, which resolves to this repository at the same commit,
+so pinning `allinone.yml` to a SHA pins every group too. Each group can also be
+called directly with the same inputs.
 
 ## Use from any repository
 
@@ -19,12 +35,6 @@ permissions:
 
 jobs:
   checks:
-    # GitHub validates every called job's permissions, including skipped ones,
-    # against what the caller grants. The codeql job declares these.
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
     uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
     with:
       mode: audit
@@ -42,7 +52,8 @@ merge revision), not this repository. It runs on GitHub-hosted Ubuntu runners.
 
 ## Checks
 
-All enabled checks run independently in parallel after configuration validation.
+All enabled checks run independently in parallel after configuration validation:
+groups run in parallel, and so do the checks inside each group.
 
 | Input | Default | Check |
 | --- | --- | --- |
@@ -96,13 +107,29 @@ No infrastructure credentials are supplied.
   repository's default branch, never on pull request events. `versions: false`
   also disables fix attempts.
 
-Invalid modes always fail. The final `summary` job reports passed, failed, and
-skipped jobs; tool details remain in individual logs and dependency summaries.
+Invalid modes always fail. The final `summary` job reports each check's result by
+group, including a group workflow that failed to start; tool details remain in
+individual logs and dependency summaries.
 Use the summary check for branch protection when using restrict mode.
 
 ### GitHub security features
 
-`codeql` uploads results with the job's `GITHUB_TOKEN` (`security-events: write`).
+`codeql` inherits the caller's `GITHUB_TOKEN`, so only callers that enable it
+grant the extra permissions; everyone else keeps `contents: read`:
+
+```yaml
+jobs:
+  checks:
+    permissions:
+      actions: read          # needed for private repositories
+      contents: read
+      security-events: write # upload to code scanning
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
+    with:
+      codeql: true
+      codeql-language: python
+```
+
 Code scanning must be available for the repository (public, or GitHub Advanced
 Security / Code Security enabled). Compiled languages use autobuild; use a
 dedicated CodeQL workflow when autobuild cannot build the project. Swift is not
@@ -149,9 +176,9 @@ rules, and PR limits may defer updates.
 Use `pull_request`, not `pull_request_target`, to test untrusted changes. Python
 tests, package installation, Dockerfiles, Terraform providers, Bicep modules, and
 repository linter configuration can execute or fetch repository-controlled code:
-do not pass secrets or grant write permissions to these jobs. Only the `codeql`
-job holds `security-events: write`, and only the alert jobs, which do not check
-out code, receive `github-security-token`. `python-command` is intentionally a
+do not pass secrets or grant write permissions to these jobs. Every job sets
+minimal permissions except `codeql`, which inherits the caller's token; only the
+alert jobs, which do not check out code, receive `github-security-token`. `python-command` is intentionally a
 shell command and must come from trusted workflow configuration, never event
 titles, branch names, or other untrusted input.
 

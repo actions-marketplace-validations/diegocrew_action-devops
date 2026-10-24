@@ -1,5 +1,8 @@
 name: All-in-one DevOps and security
 
+# Configuration only: each group of checks lives in its own reusable workflow,
+# called below from this repository at the same commit as this file.
+
 on:
   workflow_call:
     inputs:
@@ -7,18 +10,12 @@ on:
         description: "audit (report), restrict (fail), or advanced (report and attempt dependency PRs)"
         type: string
         default: audit
-      trivy:
-        description: Scan vulnerabilities, secrets, and infrastructure misconfiguration
-        type: boolean
-        default: true
-      versions:
-        description: Check dependency versions, including Actions and Terraform providers
-        type: boolean
-        default: true
+      # Quality
       lint:
         description: Run Super-Linter on the repository
         type: boolean
         default: true
+      # Build and test
       python:
         description: Install Python requirements and run tests
         type: boolean
@@ -27,6 +24,7 @@ on:
         description: Build a Docker image without pushing it
         type: boolean
         default: false
+      # Infrastructure as code
       terraform:
         description: Check formatting and validate Terraform without a backend
         type: boolean
@@ -39,6 +37,11 @@ on:
         description: Lint CloudFormation templates
         type: boolean
         default: false
+      # Security
+      trivy:
+        description: Scan vulnerabilities, secrets, and infrastructure misconfiguration
+        type: boolean
+        default: true
       iac-security:
         description: Run Checkov security and best-practice checks on IaC
         type: boolean
@@ -47,10 +50,6 @@ on:
         description: Opt in to GitHub CodeQL analysis and code-scanning uploads
         type: boolean
         default: false
-      codeql-language:
-        description: One CodeQL language present in the repository; call separately for other languages
-        type: string
-        default: javascript-typescript
       dependabot:
         description: Check existing open high and critical GitHub Dependabot alerts
         type: boolean
@@ -63,6 +62,12 @@ on:
         description: Check existing open GitHub secret-scanning alerts
         type: boolean
         default: false
+      # Dependencies
+      versions:
+        description: Check dependency versions, including Actions and Terraform providers
+        type: boolean
+        default: true
+      # Check settings
       python-version:
         type: string
         default: "3.12"
@@ -95,6 +100,10 @@ on:
         description: Directory containing CloudFormation templates
         type: string
         default: cloudformation
+      codeql-language:
+        description: One CodeQL language present in the repository; call separately for other languages
+        type: string
+        default: javascript-typescript
       severity:
         description: Comma-separated Trivy severity levels that count as findings
         type: string
@@ -107,8 +116,8 @@ on:
         description: Optional bot PAT or GitHub App token for advanced-mode dependency PRs
         required: false
 
-permissions:
-  contents: read
+# No workflow-level permissions: the security group must be able to inherit
+# security-events: write for CodeQL. Every other job is limited explicitly.
 
 defaults:
   run:
@@ -118,448 +127,96 @@ jobs:
   configuration:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Validate mode
         env:
           MODE: ${{ inputs.mode }}
-          CODEQL: ${{ inputs.codeql }}
-          CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
         run: |
           case "$MODE" in
             audit|restrict|advanced) ;;
             *) echo "::error::mode must be audit, restrict, or advanced"; exit 1 ;;
           esac
-          if [[ "$CODEQL" == "true" ]]; then
-            case "$CODEQL_LANGUAGE" in
-              javascript-typescript|python|ruby|c-cpp|go|java-kotlin|csharp) ;;
-              *) echo "::error::codeql-language must be one supported language; see README"; exit 1 ;;
-            esac
-          fi
 
-  trivy:
-    needs: configuration
-    if: inputs.trivy
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Scan repository
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,secret,misconfig
-          severity: ${{ inputs.severity }}
-          exit-code: "1"
-          format: table
-
-  versions:
-    needs: configuration
-    if: inputs.versions
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Look up dependency updates at the checked-out revision
-        env:
-          GITHUB_COM_TOKEN: ${{ github.token }}
-        run: |
-          printf '{}\n' > "$RUNNER_TEMP/action-devops-renovate-config.json"
-          docker run --rm --user "$(id -u):$(id -g)" \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
-            --volume "$RUNNER_TEMP:/tmp" --workdir /workspace \
-            --env GITHUB_COM_TOKEN \
-            --env LOG_FILE=/tmp/action-devops-renovate.json \
-            --env LOG_FILE_LEVEL=debug \
-            --env RENOVATE_CONFIG_FILE=/tmp/action-devops-renovate-config.json \
-            --env RENOVATE_ONBOARDING=false \
-            --env RENOVATE_ALLOW_SCRIPTS=false \
-            --env RENOVATE_IGNORE_SCRIPTS=true \
-            --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
-            ghcr.io/renovatebot/renovate:44.167.5 \
-            --platform=local --dry-run=lookup
-      - name: Report outdated dependencies
-        env:
-          REPORT: ${{ runner.temp }}/action-devops-renovate.json
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import sys
-
-          found = False
-          updates = []
-          errors = []
-          with open(os.environ["REPORT"], encoding="utf-8") as report:
-              for line in report:
-                  record = json.loads(line)
-                  if record.get("level", 0) >= 50:
-                      errors.append(record.get("msg", "Renovate error"))
-                  if record.get("msg") != "packageFiles with updates":
-                      continue
-                  found = True
-                  for manager, files in record["config"].items():
-                      for package in files:
-                          for dep in package.get("deps", []):
-                              if dep.get("warnings") or dep.get("skipReason") == "lookup-failed":
-                                  errors.append(f"Lookup failed: {dep.get('depName', manager)}")
-                              for update in dep.get("updates", []):
-                                  updates.append(
-                                      f"{package['packageFile']}: {dep.get('depName', manager)} "
-                                      f"{dep.get('currentValue', '?')} -> "
-                                      f"{update.get('newValue', update.get('newVersion', '?'))}"
-                                  )
-          if not found:
-              errors.append("Renovate did not produce a dependency lookup report")
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("## Dependency versions\n\n")
-              for message in updates + errors:
-                  # Keep dependency metadata out of Markdown/HTML markup.
-                  summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
-              if not updates and not errors:
-                  summary.write("No supported dependency updates found.\n")
-          print(f"{len(updates)} available updates; {len(errors)} lookup errors")
-          sys.exit(1 if updates or errors else 0)
-          PY
-
-  lint:
+  quality:
     needs: configuration
     if: inputs.lint
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: super-linter/super-linter@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
-        env:
-          VALIDATE_ALL_CODEBASE: true
-          ENABLE_GITHUB_ACTIONS_GROUP_TITLE: true
-          MULTI_STATUS: false
-          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
-
-  python:
-    needs: configuration
-    if: inputs.python
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ inputs.python-version }}
-      - name: Install requirements
-        if: inputs.python-requirements != ''
-        env:
-          REQUIREMENTS: ${{ inputs.python-requirements }}
-        run: python -m pip install -r "$REQUIREMENTS"
-      - name: Run Python tests
-        env:
-          TEST_COMMAND: ${{ inputs.python-command }}
-        run: bash -e -o pipefail -c "$TEST_COMMAND"
-
-  docker:
-    needs: configuration
-    if: inputs.docker
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Build image
-        env:
-          CONTEXT: ${{ inputs.docker-context }}
-          DOCKERFILE: ${{ inputs.dockerfile }}
-        run: docker build --file "$DOCKERFILE" --tag action-devops-check:local -- "$CONTEXT"
-
-  terraform:
-    needs: configuration
-    if: inputs.terraform
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: ${{ inputs.terraform-version }}
-          terraform_wrapper: false
-      - name: Format and validate root module
-        env:
-          TF_DIRECTORY: ${{ inputs.terraform-directory }}
-          TF_IN_AUTOMATION: "true"
-          TF_INPUT: "false"
-        run: |
-          cd -- "$TF_DIRECTORY" || exit 1
-          terraform fmt -check -recursive
-          terraform init -backend=false -input=false
-          terraform validate -no-color
-
-  bicep:
-    needs: configuration
-    if: inputs.bicep
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Bicep CLI
-        run: az bicep install
-      - name: Compile Bicep templates
-        env:
-          BICEP_DIRECTORY: ${{ inputs.bicep-directory }}
-        run: |
-          if [[ ! -d "$BICEP_DIRECTORY" ]]; then
-            echo "::error::Bicep directory does not exist: $BICEP_DIRECTORY"
-            exit 1
-          fi
-          mapfile -d '' templates < <(find "$BICEP_DIRECTORY" -type f -name '*.bicep' -print0)
-          mapfile -d '' parameters < <(find "$BICEP_DIRECTORY" -type f -name '*.bicepparam' -print0)
-          if (( ${#templates[@]} == 0 && ${#parameters[@]} == 0 )); then
-            echo "::error::No .bicep or .bicepparam files found in $BICEP_DIRECTORY"
-            exit 1
-          fi
-          for template in "${templates[@]}"; do
-            echo "::group::Compile $template"
-            az bicep build --file "$template" --outfile "$RUNNER_TEMP/template.json"
-            echo "::endgroup::"
-          done
-          for parameter_file in "${parameters[@]}"; do
-            echo "::group::Compile $parameter_file"
-            az bicep build-params --file "$parameter_file" --outfile "$RUNNER_TEMP/parameters.json"
-            echo "::endgroup::"
-          done
-
-  cloudformation:
-    needs: configuration
-    if: inputs.cloudformation
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install cfn-lint
-        run: |
-          python3 -m venv "$RUNNER_TEMP/cfn-lint"
-          "$RUNNER_TEMP/cfn-lint/bin/python" -m pip install --disable-pip-version-check cfn-lint==1.58.0
-      - name: Lint CloudFormation templates
-        env:
-          CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}
-        run: |
-          if [[ ! -d "$CFN_DIRECTORY" ]]; then
-            echo "::error::CloudFormation directory does not exist: $CFN_DIRECTORY"
-            exit 1
-          fi
-          mapfile -d '' templates < <(find "$CFN_DIRECTORY" -type f \( -iname '*.yaml' -o -iname '*.yml' -o -iname '*.json' -o -iname '*.template' \) -print0)
-          if (( ${#templates[@]} == 0 )); then
-            echo "::error::No YAML, JSON, or .template CloudFormation templates found in $CFN_DIRECTORY"
-            exit 1
-          fi
-          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" "${templates[@]}"
-
-  iac-security:
-    needs: configuration
-    if: inputs.iac-security
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Checkov
-        run: |
-          python3 -m venv "$RUNNER_TEMP/checkov"
-          "$RUNNER_TEMP/checkov/bin/python" -m pip install --disable-pip-version-check checkov==3.3.30
-      - name: Scan infrastructure as code
-        run: >-
-          "$RUNNER_TEMP/checkov/bin/checkov"
-          --directory .
-          --framework terraform,cloudformation,arm,bicep
-          --compact
-
-  codeql:
-    needs: configuration
-    if: inputs.codeql
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
-      actions: read
       contents: read
-      security-events: write
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
-        with:
-          languages: ${{ inputs.codeql-language }}
-          queries: security-extended
-          build-mode: ${{ contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language) && 'autobuild' || 'none' }}
-      - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
-        if: contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language)
-      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
-        with:
-          category: /language:${{ inputs.codeql-language }}
+    uses: $/.github/workflows/quality.yml
+    with:
+      mode: ${{ inputs.mode }}
+      lint: ${{ inputs.lint }}
 
-  dependabot:
+  build-test:
     needs: configuration
-    if: inputs.dependabot
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - name: Check open Dependabot alerts
-        env:
-          GH_TOKEN: ${{ secrets.github-security-token }}
-          GH_HOST: ${{ github.server_url }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::Pass github-security-token with Dependabot alerts read permission"
-            exit 1
-          fi
-          export GH_HOST="${GH_HOST#*://}"
-          # gh rejects --slurp combined with --jq, so count with jq.
-          count=$(gh api --paginate --slurp \
-            "repos/$REPOSITORY/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
-            | jq '[.[][]] | length')
-          echo "Open high/critical Dependabot alerts: $count" >> "$GITHUB_STEP_SUMMARY"
-          if (( count > 0 )); then
-            echo "::error::Open high/critical Dependabot alerts require attention"
-            exit 1
-          fi
+    if: inputs.python || inputs.docker
+    permissions:
+      contents: read
+    uses: $/.github/workflows/build-test.yml
+    with:
+      mode: ${{ inputs.mode }}
+      python: ${{ inputs.python }}
+      docker: ${{ inputs.docker }}
+      python-version: ${{ inputs.python-version }}
+      python-requirements: ${{ inputs.python-requirements }}
+      python-command: ${{ inputs.python-command }}
+      docker-context: ${{ inputs.docker-context }}
+      dockerfile: ${{ inputs.dockerfile }}
 
-  dependency-review:
+  iac:
     needs: configuration
-    if: inputs.dependency-review && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
-        with:
-          fail-on-severity: high
-          comment-summary-in-pr: never
+    if: inputs.terraform || inputs.bicep || inputs.cloudformation
+    permissions:
+      contents: read
+    uses: $/.github/workflows/iac.yml
+    with:
+      mode: ${{ inputs.mode }}
+      terraform: ${{ inputs.terraform }}
+      bicep: ${{ inputs.bicep }}
+      cloudformation: ${{ inputs.cloudformation }}
+      terraform-directory: ${{ inputs.terraform-directory }}
+      terraform-version: ${{ inputs.terraform-version }}
+      bicep-directory: ${{ inputs.bicep-directory }}
+      cloudformation-directory: ${{ inputs.cloudformation-directory }}
 
-  secret-scanning:
-    needs: configuration
-    if: inputs.secret-scanning
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: ${{ inputs.mode != 'restrict' }}
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - name: Check open secret-scanning alerts
-        env:
-          GH_TOKEN: ${{ secrets.github-security-token }}
-          GH_HOST: ${{ github.server_url }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "::error::Pass github-security-token with Secret scanning alerts read permission"
-            exit 1
-          fi
-          export GH_HOST="${GH_HOST#*://}"
-          # gh rejects --slurp combined with --jq, so count with jq.
-          count=$(gh api --paginate --slurp \
-            "repos/$REPOSITORY/secret-scanning/alerts?state=open&per_page=100" \
-            | jq '[.[][]] | length')
-          echo "Open secret-scanning alerts: $count" >> "$GITHUB_STEP_SUMMARY"
-          if (( count > 0 )); then
-            echo "::error::Open secret-scanning alerts require attention"
-            exit 1
-          fi
-
-  fixes:
+  security:
     needs: configuration
     if: >-
-      inputs.mode == 'advanced' && inputs.versions &&
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: true
-    outputs:
-      result: ${{ job.status }}
-    steps:
-      - name: Check bot credentials
-        env:
-          BOT_TOKEN: ${{ secrets.renovate-token }}
-        run: |
-          if [[ -z "$BOT_TOKEN" ]]; then
-            echo "::error::Pass renovate-token to enable dependency fix PRs"
-            exit 1
-          fi
-      - name: Attempt dependency fix PRs
-        uses: renovatebot/github-action@a63d9a7bc606f7336fd20b47f2f32259a35e6213 # v46.3.9
-        with:
-          token: ${{ secrets.renovate-token }}
-          renovate-version: 44.167.5
-        env:
-          RENOVATE_REPOSITORIES: ${{ github.repository }}
-          RENOVATE_ONBOARDING: "false"
-          RENOVATE_REQUIRE_CONFIG: optional
-          RENOVATE_AUTOMERGE: "false"
-          RENOVATE_FORCE: '{"automerge": false, "platformAutomerge": false}'
-          RENOVATE_ALLOW_SCRIPTS: "false"
-          RENOVATE_IGNORE_SCRIPTS: "true"
-          RENOVATE_ALLOWED_COMMANDS: "[]"
-          RENOVATE_PR_HOURLY_LIMIT: "2"
+      inputs.trivy || inputs.iac-security || inputs.codeql ||
+      inputs.dependabot || inputs.dependency-review || inputs.secret-scanning
+    uses: $/.github/workflows/security.yml
+    with:
+      mode: ${{ inputs.mode }}
+      trivy: ${{ inputs.trivy }}
+      iac-security: ${{ inputs.iac-security }}
+      codeql: ${{ inputs.codeql }}
+      codeql-language: ${{ inputs.codeql-language }}
+      dependabot: ${{ inputs.dependabot }}
+      dependency-review: ${{ inputs.dependency-review }}
+      secret-scanning: ${{ inputs.secret-scanning }}
+      severity: ${{ inputs.severity }}
+    secrets:
+      github-security-token: ${{ secrets.github-security-token }}
+
+  dependencies:
+    needs: configuration
+    if: inputs.versions
+    permissions:
+      contents: read
+    uses: $/.github/workflows/dependencies.yml
+    with:
+      mode: ${{ inputs.mode }}
+      versions: ${{ inputs.versions }}
+    secrets:
+      renovate-token: ${{ secrets.renovate-token }}
 
   summary:
-    needs: [configuration, trivy, versions, lint, python, docker, terraform, bicep, cloudformation, iac-security, codeql, dependabot, dependency-review, secret-scanning, fixes]
+    needs: [configuration, quality, build-test, iac, security, dependencies]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Summarize results and enforce policy
         env:
@@ -574,13 +231,25 @@ jobs:
           results = json.loads(os.environ["RESULTS"])
           failures = []
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("## All-in-one results\n\n| Check | Result |\n| --- | --- |\n")
-              for name, job in results.items():
-                  result = job.get("outputs", {}).get("result") or job["result"]
-                  summary.write(f"| {name} | {result} |\n")
-                  if result not in ("success", "skipped"):
-                      failures.append(name)
+              summary.write("## All-in-one results\n\n| Group | Check | Result |\n| --- | --- | --- |\n")
+              for group, job in results.items():
+                  if group == "configuration":
+                      continue
+                  # Each group reports its checks' job.status; disabled checks are empty.
+                  checks = {name: value or "skipped" for name, value in (job.get("outputs") or {}).items()}
+                  if job["result"] in ("failure", "cancelled") and not any(
+                      value not in ("success", "skipped") for value in checks.values()
+                  ):
+                      checks["(workflow)"] = job["result"]
+                  if not checks:
+                      checks["(all)"] = job["result"]
+                  for name, result in checks.items():
+                      summary.write(f"| {group} | {name} | {result} |\n")
+                      if result not in ("success", "skipped"):
+                          failures.append(f"{group}/{name}")
               summary.write("\nDetailed findings are in each job's logs and summaries.\n")
           invalid = results["configuration"]["result"] != "success"
+          if failures:
+              print("Failed checks: " + ", ".join(failures))
           sys.exit(1 if invalid or (os.environ["MODE"] == "restrict" and failures) else 0)
           PY

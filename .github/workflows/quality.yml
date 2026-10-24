@@ -1,0 +1,42 @@
+name: Code quality
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit or advanced (report) or restrict (fail)"
+        type: string
+        default: audit
+      lint:
+        description: Run Super-Linter on the repository
+        type: boolean
+        default: true
+    outputs:
+      lint:
+        value: ${{ jobs.lint.outputs.result }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    if: inputs.lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: super-linter/super-linter@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
+        env:
+          VALIDATE_ALL_CODEBASE: true
+          ENABLE_GITHUB_ACTIONS_GROUP_TITLE: true
+          MULTI_STATUS: false
+          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false

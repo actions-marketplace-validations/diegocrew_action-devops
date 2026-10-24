@@ -1,0 +1,139 @@
+name: Dependencies
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit (report), restrict (fail), or advanced (report and attempt dependency PRs)"
+        type: string
+        default: audit
+      versions:
+        description: Check dependency versions, including Actions and Terraform providers
+        type: boolean
+        default: true
+    secrets:
+      renovate-token:
+        description: Optional bot PAT or GitHub App token for advanced-mode dependency PRs
+        required: false
+    outputs:
+      versions:
+        value: ${{ jobs.versions.outputs.result }}
+      fixes:
+        value: ${{ jobs.fixes.outputs.result }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  versions:
+    if: inputs.versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Look up dependency updates at the checked-out revision
+        env:
+          GITHUB_COM_TOKEN: ${{ github.token }}
+        run: |
+          printf '{}\n' > "$RUNNER_TEMP/action-devops-renovate-config.json"
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$RUNNER_TEMP:/tmp" --workdir /workspace \
+            --env GITHUB_COM_TOKEN \
+            --env LOG_FILE=/tmp/action-devops-renovate.json \
+            --env LOG_FILE_LEVEL=debug \
+            --env RENOVATE_CONFIG_FILE=/tmp/action-devops-renovate-config.json \
+            --env RENOVATE_ONBOARDING=false \
+            --env RENOVATE_ALLOW_SCRIPTS=false \
+            --env RENOVATE_IGNORE_SCRIPTS=true \
+            --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
+            ghcr.io/renovatebot/renovate:44.167.5 \
+            --platform=local --dry-run=lookup
+      - name: Report outdated dependencies
+        env:
+          REPORT: ${{ runner.temp }}/action-devops-renovate.json
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          found = False
+          updates = []
+          errors = []
+          with open(os.environ["REPORT"], encoding="utf-8") as report:
+              for line in report:
+                  record = json.loads(line)
+                  if record.get("level", 0) >= 50:
+                      errors.append(record.get("msg", "Renovate error"))
+                  if record.get("msg") != "packageFiles with updates":
+                      continue
+                  found = True
+                  for manager, files in record["config"].items():
+                      for package in files:
+                          for dep in package.get("deps", []):
+                              if dep.get("warnings") or dep.get("skipReason") == "lookup-failed":
+                                  errors.append(f"Lookup failed: {dep.get('depName', manager)}")
+                              for update in dep.get("updates", []):
+                                  updates.append(
+                                      f"{package['packageFile']}: {dep.get('depName', manager)} "
+                                      f"{dep.get('currentValue', '?')} -> "
+                                      f"{update.get('newValue', update.get('newVersion', '?'))}"
+                                  )
+          if not found:
+              errors.append("Renovate did not produce a dependency lookup report")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Dependency versions\n\n")
+              for message in updates + errors:
+                  # Keep dependency metadata out of Markdown/HTML markup.
+                  summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
+              if not updates and not errors:
+                  summary.write("No supported dependency updates found.\n")
+          print(f"{len(updates)} available updates; {len(errors)} lookup errors")
+          sys.exit(1 if updates or errors else 0)
+          PY
+
+  fixes:
+    if: >-
+      inputs.mode == 'advanced' && inputs.versions &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Check bot credentials
+        env:
+          BOT_TOKEN: ${{ secrets.renovate-token }}
+        run: |
+          if [[ -z "$BOT_TOKEN" ]]; then
+            echo "::error::Pass renovate-token to enable dependency fix PRs"
+            exit 1
+          fi
+      - name: Attempt dependency fix PRs
+        uses: renovatebot/github-action@a63d9a7bc606f7336fd20b47f2f32259a35e6213 # v46.3.9
+        with:
+          token: ${{ secrets.renovate-token }}
+          renovate-version: 44.167.5
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: optional
+          RENOVATE_AUTOMERGE: "false"
+          RENOVATE_FORCE: '{"automerge": false, "platformAutomerge": false}'
+          RENOVATE_ALLOW_SCRIPTS: "false"
+          RENOVATE_IGNORE_SCRIPTS: "true"
+          RENOVATE_ALLOWED_COMMANDS: "[]"
+          RENOVATE_PR_HOURLY_LIMIT: "2"

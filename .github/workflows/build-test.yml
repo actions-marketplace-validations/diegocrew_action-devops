@@ -1,0 +1,89 @@
+name: Build and test
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit or advanced (report) or restrict (fail)"
+        type: string
+        default: audit
+      python:
+        description: Install Python requirements and run tests
+        type: boolean
+        default: false
+      docker:
+        description: Build a Docker image without pushing it
+        type: boolean
+        default: false
+      python-version:
+        type: string
+        default: "3.12"
+      python-requirements:
+        description: Optional requirements file; an empty value skips installation
+        type: string
+        default: ""
+      python-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: python -m unittest discover -v
+      docker-context:
+        type: string
+        default: "."
+      dockerfile:
+        type: string
+        default: Dockerfile
+    outputs:
+      python:
+        value: ${{ jobs.python.outputs.result }}
+      docker:
+        value: ${{ jobs.docker.outputs.result }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  python:
+    if: inputs.python
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Install requirements
+        if: inputs.python-requirements != ''
+        env:
+          REQUIREMENTS: ${{ inputs.python-requirements }}
+        run: python -m pip install -r "$REQUIREMENTS"
+      - name: Run Python tests
+        env:
+          TEST_COMMAND: ${{ inputs.python-command }}
+        run: bash -e -o pipefail -c "$TEST_COMMAND"
+
+  docker:
+    if: inputs.docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        env:
+          CONTEXT: ${{ inputs.docker-context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: docker build --file "$DOCKERFILE" --tag action-devops-check:local -- "$CONTEXT"

@@ -1,0 +1,148 @@
+name: Infrastructure as code
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: "audit or advanced (report) or restrict (fail)"
+        type: string
+        default: audit
+      terraform:
+        description: Check formatting and validate Terraform without a backend
+        type: boolean
+        default: false
+      bicep:
+        description: Compile and validate Bicep templates without deploying
+        type: boolean
+        default: false
+      cloudformation:
+        description: Lint CloudFormation templates
+        type: boolean
+        default: false
+      terraform-directory:
+        description: Terraform root module to validate
+        type: string
+        default: "."
+      terraform-version:
+        type: string
+        default: latest
+      bicep-directory:
+        description: Directory containing Bicep templates
+        type: string
+        default: bicep
+      cloudformation-directory:
+        description: Directory containing CloudFormation templates
+        type: string
+        default: cloudformation
+    outputs:
+      terraform:
+        value: ${{ jobs.terraform.outputs.result }}
+      bicep:
+        value: ${{ jobs.bicep.outputs.result }}
+      cloudformation:
+        value: ${{ jobs.cloudformation.outputs.result }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  terraform:
+    if: inputs.terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+      - name: Format and validate root module
+        env:
+          TF_DIRECTORY: ${{ inputs.terraform-directory }}
+          TF_IN_AUTOMATION: "true"
+          TF_INPUT: "false"
+        run: |
+          cd -- "$TF_DIRECTORY" || exit 1
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate -no-color
+
+  bicep:
+    if: inputs.bicep
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Bicep CLI
+        run: az bicep install
+      - name: Compile Bicep templates
+        env:
+          BICEP_DIRECTORY: ${{ inputs.bicep-directory }}
+        run: |
+          if [[ ! -d "$BICEP_DIRECTORY" ]]; then
+            echo "::error::Bicep directory does not exist: $BICEP_DIRECTORY"
+            exit 1
+          fi
+          mapfile -d '' templates < <(find "$BICEP_DIRECTORY" -type f -name '*.bicep' -print0)
+          mapfile -d '' parameters < <(find "$BICEP_DIRECTORY" -type f -name '*.bicepparam' -print0)
+          if (( ${#templates[@]} == 0 && ${#parameters[@]} == 0 )); then
+            echo "::error::No .bicep or .bicepparam files found in $BICEP_DIRECTORY"
+            exit 1
+          fi
+          for template in "${templates[@]}"; do
+            echo "::group::Compile $template"
+            az bicep build --file "$template" --outfile "$RUNNER_TEMP/template.json"
+            echo "::endgroup::"
+          done
+          for parameter_file in "${parameters[@]}"; do
+            echo "::group::Compile $parameter_file"
+            az bicep build-params --file "$parameter_file" --outfile "$RUNNER_TEMP/parameters.json"
+            echo "::endgroup::"
+          done
+
+  cloudformation:
+    if: inputs.cloudformation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install cfn-lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cfn-lint"
+          "$RUNNER_TEMP/cfn-lint/bin/python" -m pip install --disable-pip-version-check cfn-lint==1.58.0
+      - name: Lint CloudFormation templates
+        env:
+          CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}
+        run: |
+          if [[ ! -d "$CFN_DIRECTORY" ]]; then
+            echo "::error::CloudFormation directory does not exist: $CFN_DIRECTORY"
+            exit 1
+          fi
+          mapfile -d '' templates < <(find "$CFN_DIRECTORY" -type f \( -iname '*.yaml' -o -iname '*.yml' -o -iname '*.json' -o -iname '*.template' \) -print0)
+          if (( ${#templates[@]} == 0 )); then
+            echo "::error::No YAML, JSON, or .template CloudFormation templates found in $CFN_DIRECTORY"
+            exit 1
+          fi
+          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" "${templates[@]}"
