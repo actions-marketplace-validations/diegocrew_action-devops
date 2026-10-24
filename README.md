@@ -19,6 +19,12 @@ permissions:
 
 jobs:
   checks:
+    # GitHub validates every called job's permissions, including skipped ones,
+    # against what the caller grants. The codeql job declares these.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     uses: diegocrew/action-devops/.github/workflows/allinone.yml@main
     with:
       mode: audit
@@ -46,6 +52,13 @@ All enabled checks run independently in parallel after configuration validation.
 | `python` | `false` | Python setup, optional requirements installation, and test command |
 | `docker` | `false` | Docker build; never pushes an image |
 | `terraform` | `false` | Recursive format check, backend-free init, and root-module validation; never plans or applies |
+| `bicep` | `false` | Compiles every `.bicep` and `.bicepparam` file; never deploys |
+| `cloudformation` | `false` | `cfn-lint` on YAML, JSON, and `.template` files |
+| `iac-security` | `true` | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, and Bicep |
+| `codeql` | `false` | CodeQL `security-extended` analysis for one language, uploaded to code scanning |
+| `dependabot` | `false` | Fails on open high/critical Dependabot alerts |
+| `dependency-review` | `false` | Fails on newly introduced high/critical vulnerable dependencies; `pull_request` events only |
+| `secret-scanning` | `false` | Fails on open secret-scanning alerts |
 
 Set any check to `false` to skip it. Enable project-specific checks only when their
 files exist; missing explicitly requested files are errors, not silent skips.
@@ -66,6 +79,9 @@ No infrastructure credentials are supplied.
 | `dockerfile` | `Dockerfile` | Dockerfile path relative to repository root |
 | `terraform-directory` | `.` | Root module directory; call separately for independent roots |
 | `terraform-version` | `latest` | Terraform CLI version; pin for reproducible runs |
+| `bicep-directory` | `bicep` | Directory searched recursively for Bicep files |
+| `cloudformation-directory` | `cloudformation` | Directory searched recursively for CloudFormation templates |
+| `codeql-language` | `javascript-typescript` | One of `javascript-typescript`, `python`, `ruby`, `c-cpp`, `go`, `java-kotlin`, `csharp`; call separately per language |
 
 ## Modes
 
@@ -83,6 +99,27 @@ No infrastructure credentials are supplied.
 Invalid modes always fail. The final `summary` job reports passed, failed, and
 skipped jobs; tool details remain in individual logs and dependency summaries.
 Use the summary check for branch protection when using restrict mode.
+
+### GitHub security features
+
+`codeql` uploads results with the job's `GITHUB_TOKEN` (`security-events: write`).
+Code scanning must be available for the repository (public, or GitHub Advanced
+Security / Code Security enabled). Compiled languages use autobuild; use a
+dedicated CodeQL workflow when autobuild cannot build the project. Swift is not
+supported here because CodeQL Swift analysis requires macOS runners.
+
+`dependabot` and `secret-scanning` read alert APIs that `GITHUB_TOKEN` cannot
+access. Pass a fine-grained token restricted to the calling repository with only
+**Dependabot alerts: read** and/or **Secret scanning alerts: read**:
+
+```yaml
+    secrets:
+      github-security-token: ${{ secrets.SECURITY_ALERTS_TOKEN }}
+```
+
+A missing token fails the enabled check. These checks report existing alerts; they
+do not change alert state. `dependency-review` needs the dependency graph enabled
+and runs only for `pull_request` events.
 
 ### Advanced-mode credentials
 
@@ -110,9 +147,11 @@ rules, and PR limits may defer updates.
 ## Security boundaries
 
 Use `pull_request`, not `pull_request_target`, to test untrusted changes. Python
-tests, package installation, Dockerfiles, Terraform providers, and repository
-linter configuration can execute repository-controlled code: do not pass secrets
-or grant write permissions to these jobs. `python-command` is intentionally a
+tests, package installation, Dockerfiles, Terraform providers, Bicep modules, and
+repository linter configuration can execute or fetch repository-controlled code:
+do not pass secrets or grant write permissions to these jobs. Only the `codeql`
+job holds `security-events: write`, and only the alert jobs, which do not check
+out code, receive `github-security-token`. `python-command` is intentionally a
 shell command and must come from trusted workflow configuration, never event
 titles, branch names, or other untrusted input.
 
