@@ -8,7 +8,7 @@ export TF_IN_AUTOMATION=true TF_INPUT=false
 # shellcheck source=SCRIPTDIR/list.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/list.sh"
 mapfile -t roots < <(split_list "${TF_DIRECTORY:-}")
-if (( ${#roots[@]} == 0 )); then
+if ((${#roots[@]} == 0)); then
   echo "::error::terraform-directory must name at least one root module"
   exit 1
 fi
@@ -30,16 +30,16 @@ for root in "${roots[@]}"; do
     result=$?
   fi
   echo "::endgroup::"
-  if (( result == 0 )); then
-    echo "| \`$root\` | success |" >> "$RUNNER_TEMP/terraform-results.md"
+  if ((result == 0)); then
+    echo "| \`$root\` | success |" >>"$RUNNER_TEMP/terraform-results.md"
   else
     echo "::error::Terraform checks failed in $root"
-    echo "| \`$root\` | failure |" >> "$RUNNER_TEMP/terraform-results.md"
+    echo "| \`$root\` | failure |" >>"$RUNNER_TEMP/terraform-results.md"
     failed+=("$root")
   fi
 done
 {
   printf '## Terraform\n\n| Root | Result |\n| --- | --- |\n'
   cat "$RUNNER_TEMP/terraform-results.md"
-} >> "$GITHUB_STEP_SUMMARY"
-(( ${#failed[@]} == 0 ))
+} >>"$GITHUB_STEP_SUMMARY"
+((${#failed[@]} == 0))

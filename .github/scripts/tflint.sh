@@ -10,11 +10,14 @@ set -uo pipefail
 # shellcheck source=SCRIPTDIR/list.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/list.sh"
 case "${1:-}" in
-  init|lint) ;;
-  *) echo "::error::Usage: tflint.sh init|lint"; exit 2 ;;
+  init | lint) ;;
+  *)
+    echo "::error::Usage: tflint.sh init|lint"
+    exit 2
+    ;;
 esac
 mapfile -t roots < <(split_list "${TF_DIRECTORY:-}")
-if (( ${#roots[@]} == 0 )); then
+if ((${#roots[@]} == 0)); then
   echo "::error::terraform-directory must name at least one root module"
   exit 1
 fi
@@ -34,9 +37,9 @@ for root in "${roots[@]}"; do
   fi
   result=$?
   echo "::endgroup::"
-  if (( result != 0 )); then
+  if ((result != 0)); then
     echo "::error::TFLint $1 failed in $root"
     failed+=("$root")
   fi
 done
-(( ${#failed[@]} == 0 ))
+((${#failed[@]} == 0))

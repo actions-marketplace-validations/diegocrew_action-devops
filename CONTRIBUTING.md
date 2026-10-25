@@ -7,11 +7,11 @@ see [SECURITY.md](SECURITY.md).
 
 The repository has three layers (see [README.md](README.md)):
 
-| Change | Edit |
-| --- | --- |
-| How a check works | Its script in `.github/scripts/` |
-| Tool setup, permissions, or a new check in a group | The group workflow in `.github/workflows/` |
-| A new input or check that callers can switch | The group workflow **and** `allinone.yml`, which forwards it |
+| Change                                             | Edit                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------ |
+| How a check works                                  | Its script in `.github/scripts/`                             |
+| Tool setup, permissions, or a new check in a group | The group workflow in `.github/workflows/`                   |
+| A new input or check that callers can switch       | The group workflow **and** `allinone.yml`, which forwards it |
 
 Keep logic in scripts. Workflows only set up tools, pass inputs as environment
 variables, and call scripts or pinned actions.

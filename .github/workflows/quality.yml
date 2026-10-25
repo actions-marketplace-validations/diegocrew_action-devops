@@ -15,6 +15,9 @@ on:
       lint:
         value: ${{ jobs.lint.outputs.result }}
 
+# Each job sets its own minimal permissions.
+permissions: {}
+
 defaults:
   run:
     shell: bash

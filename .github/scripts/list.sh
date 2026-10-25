@@ -7,6 +7,6 @@ split_list() {
     item="${item#"${item%%[![:space:]]*}"}"
     item="${item%"${item##*[![:space:]]}"}"
     [[ -n "$item" ]] && printf '%s\n' "$item"
-  done < <(tr ',' '\n' <<< "$1")
+  done < <(tr ',' '\n' <<<"$1")
   return 0
 }

@@ -240,7 +240,9 @@ jobs:
       bicep-directory: ${{ inputs.bicep-directory }}
       cloudformation-directory: ${{ inputs.cloudformation-directory }}
 
-  security:
+  # No permissions block: CodeQL must inherit security-events: write from callers
+  # that enable it, without forcing every caller to grant it.
+  security: # zizmor: ignore[excessive-permissions]
     needs: configuration
     if: >-
       inputs.trivy || inputs.iac-security || inputs.codeql ||

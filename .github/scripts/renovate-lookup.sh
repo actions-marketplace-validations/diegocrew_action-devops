@@ -4,7 +4,7 @@
 # Env: GITHUB_COM_TOKEN.
 set -euo pipefail
 
-printf '{}\n' > "$RUNNER_TEMP/action-devops-renovate-config.json"
+printf '{}\n' >"$RUNNER_TEMP/action-devops-renovate-config.json"
 docker run --rm --user "$(id -u):$(id -g)" \
   --volume "$GITHUB_WORKSPACE:/workspace" \
   --volume "$RUNNER_TEMP:/tmp" --workdir /workspace \
@@ -16,5 +16,5 @@ docker run --rm --user "$(id -u):$(id -g)" \
   --env RENOVATE_ALLOW_SCRIPTS=false \
   --env RENOVATE_IGNORE_SCRIPTS=true \
   --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
-  ghcr.io/renovatebot/renovate:44.167.5 \
+  ghcr.io/renovatebot/renovate:44.181.6 \
   --platform=local --dry-run=lookup

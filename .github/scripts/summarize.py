@@ -2,6 +2,7 @@
 
 Env: RESULTS (toJSON(needs) from allinone.yml), MODE.
 """
+
 import json
 import os
 import sys
@@ -9,18 +10,22 @@ import sys
 POLICY = {
     "audit": "failed checks are reported but do not fail this workflow.",
     "restrict": "any failed check fails this workflow.",
-    "advanced": "failed checks are reported but do not fail this workflow; "
-    "dependency fix PRs may be attempted.",
+    "advanced": (
+        "failed checks are reported but do not fail this workflow; "
+        "dependency fix PRs may be attempted."
+    ),
 }
-LABELS = {"success": "✅ success", "skipped": "⏭️ skipped", "cancelled": "⚠️ cancelled"}
+LABELS = {"success": "success", "skipped": "skipped", "cancelled": "**cancelled**"}
 
 
-def label(result, mode):
-    if result in LABELS:
-        return LABELS[result]
-    # Keep the raw result visible; a tolerated failure is still a failure.
-    suffix = f" (tolerated in {mode} mode)" if mode in ("audit", "advanced") else ""
-    return f"❌ {result}{suffix}"
+def label(status, active_mode):
+    """Return a readable result label that keeps the raw result visible."""
+    if status in LABELS:
+        return LABELS[status]
+    # A tolerated failure is still a failure.
+    if active_mode in ("audit", "advanced"):
+        return f"**{status}** (tolerated in {active_mode} mode)"
+    return f"**{status}**"
 
 
 results = json.loads(os.environ["RESULTS"])
@@ -30,8 +35,10 @@ failures = []
 with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
     summary.write("## All-in-one results\n\n")
     if invalid:
-        summary.write("❌ **Invalid configuration**: see the `configuration` job. "
-                      "Checks did not run.\n\n")
+        summary.write(
+            "**Invalid configuration**: see the `configuration` job. "
+            "Checks did not run.\n\n"
+        )
     else:
         summary.write(f"Mode: **{mode}**: {POLICY[mode]}\n\n")
     summary.write("| Group | Check | Result |\n| --- | --- | --- |\n")
@@ -39,7 +46,8 @@ with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
         if group == "configuration":
             continue
         # Each group reports its checks' job.status; disabled checks are empty.
-        checks = {name: value or "skipped" for name, value in (job.get("outputs") or {}).items()}
+        outputs = job.get("outputs") or {}
+        checks = {name: value or "skipped" for name, value in outputs.items()}
         if job["result"] in ("failure", "cancelled") and not any(
             value not in ("success", "skipped") for value in checks.values()
         ):

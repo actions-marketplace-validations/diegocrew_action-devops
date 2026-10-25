@@ -3,6 +3,9 @@
 Env: LANGUAGES (JSON list from codeql-language.sh; empty if validation failed),
 RESULTS (toJSON of the analysis matrix outputs: language -> job.status).
 """
+
+# pylint: disable=invalid-name  # Hyphenated like the other check scripts.
+
 import json
 import os
 import sys
@@ -15,7 +18,7 @@ with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
     if not languages:
         summary.write("| (configuration) | failure |\n")
     for language in languages:
-        # A leg that never reported (for example, cancelled before its last step) counts as failed.
+        # A leg that never reported (for example, cancelled early) counts as failed.
         result = results.get(language) or "missing"
         summary.write(f"| {language} | {result} |\n")
         failed = failed or result != "success"

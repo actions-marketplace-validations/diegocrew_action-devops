@@ -7,7 +7,7 @@ if [[ ! -d "$CFN_DIRECTORY" ]]; then
   exit 1
 fi
 mapfile -d '' templates < <(find "$CFN_DIRECTORY" -type f \( -iname '*.yaml' -o -iname '*.yml' -o -iname '*.json' -o -iname '*.template' \) -print0)
-if (( ${#templates[@]} == 0 )); then
+if ((${#templates[@]} == 0)); then
   echo "::error::No YAML, JSON, or .template CloudFormation templates found in $CFN_DIRECTORY"
   exit 1
 fi

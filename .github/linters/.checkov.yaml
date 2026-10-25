@@ -1,0 +1,10 @@
+---
+# Checkov configuration, used by Super-Linter.
+quiet: true
+skip-check:
+  # allinone.yml and security.yml deliberately have no top-level permissions so
+  # CodeQL inherits security-events: write only from callers that enable it.
+  # Checkov ignores inline skip comments for this graph check in workflow files.
+  # Every other workflow sets top-level permissions, and zizmor still audits
+  # permissions in all workflows.
+  - CKV2_GHA_1

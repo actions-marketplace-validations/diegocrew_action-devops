@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   checks:
-    uses: ./.github/workflows/allinone.yml
+    uses: $/.github/workflows/allinone.yml
     with:
       # Audit: scanners and version lookups report without blocking merges.
       # The summary check still fails on invalid configuration or broken wiring.

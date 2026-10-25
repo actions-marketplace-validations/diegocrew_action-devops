@@ -14,30 +14,30 @@ orchestrator.
 Call it at **job level**, not as a step: a composite action cannot create
 parallel jobs.
 
-| Workflow | Checks |
-| --- | --- |
-| `allinone.yml` | Validates `mode`, calls the groups below in parallel, and summarizes |
-| `quality.yml` | `lint` |
-| `build-test.yml` | `python`, `docker`, `node`, `go`, `dotnet` |
-| `iac.yml` | `terraform`, `tflint`, `bicep`, `cloudformation` |
-| `security.yml` | `trivy`, `iac-security`, `codeql`, `dependabot`, `dependency-review`, `secret-scanning` |
-| `dependencies.yml` | `versions`, plus advanced-mode fix PRs |
+| Workflow           | Checks                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `allinone.yml`     | Validates `mode`, calls the groups below in parallel, and summarizes                    |
+| `quality.yml`      | `lint`                                                                                  |
+| `build-test.yml`   | `python`, `docker`, `node`, `go`, `dotnet`                                              |
+| `iac.yml`          | `terraform`, `tflint`, `bicep`, `cloudformation`                                        |
+| `security.yml`     | `trivy`, `iac-security`, `codeql`, `dependabot`, `dependency-review`, `secret-scanning` |
+| `dependencies.yml` | `versions`, plus advanced-mode fix PRs                                                  |
 
 A group with every check off is skipped. `allinone.yml` calls the groups with
 `$/.github/workflows/...`, which resolves to this repository at the same commit,
 so pinning `allinone.yml` to a SHA pins every group too. Each group can also be
 called directly with the same inputs.
 
-| Script | Used by |
-| --- | --- |
-| `validate-config.sh` | `allinone.yml` configuration |
-| `summarize.py` | `allinone.yml` summary |
-| `python-tests.sh`, `docker-build.sh`, `run-command.sh` | `build-test.yml` |
-| `terraform-validate.sh`, `tflint.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml` |
-| `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml` |
-| `list.sh` | Sourced by scripts that accept comma- or newline-separated lists |
-| `renovate-lookup.sh`, `renovate-report.py` | `dependencies.yml` |
-| `create-release.sh` | `release.yml`, which publishes releases of this repository |
+| Script                                                                           | Used by                                                          |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `validate-config.sh`                                                             | `allinone.yml` configuration                                     |
+| `summarize.py`                                                                   | `allinone.yml` summary                                           |
+| `python-tests.sh`, `docker-build.sh`, `run-command.sh`                           | `build-test.yml`                                                 |
+| `terraform-validate.sh`, `tflint.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml`                                                        |
+| `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml`                                                   |
+| `list.sh`                                                                        | Sourced by scripts that accept comma- or newline-separated lists |
+| `renovate-lookup.sh`, `renovate-report.py`                                       | `dependencies.yml`                                               |
+| `create-release.sh`                                                              | `release.yml`, which publishes releases of this repository       |
 
 Jobs that need scripts check out `.github/scripts` from this repository at the
 running workflow's own commit (`job.workflow_repository` and `job.workflow_sha`),
@@ -72,7 +72,7 @@ jobs:
 ```
 
 Pin to a release tag, or to that tag's full commit SHA for production use; see
-[releases](docs/releases/README.md) for versions and change logs. The workflow
+[releases](docs/releases/README.md) for versions and changelogs. The workflow
 checks out the **calling repository** at the event revision (including the PR
 merge revision), not this repository.
 
@@ -91,25 +91,25 @@ merge revision), not this repository.
 All enabled checks run independently in parallel after configuration validation:
 groups run in parallel, and so do the checks inside each group.
 
-| Input | Default | Check |
-| --- | --- | --- |
-| `trivy` | `true` | Filesystem vulnerabilities, secrets, and IaC misconfiguration |
-| `versions` | `true` | Renovate dependency lookups, including GitHub Actions, Terraform providers/modules, Docker images, and supported language dependencies |
-| `lint` | `true` | Super-Linter's supported languages and configuration files |
-| `python` | `false` | Python setup, optional requirements installation, and test command |
-| `docker` | `false` | Docker build; never pushes an image |
-| `node` | `false` | Node.js setup and build/test command |
-| `go` | `false` | Go setup and build/test command |
-| `dotnet` | `false` | .NET SDK setup and build/test command |
-| `terraform` | `false` | Recursive format check, backend-free init, and validation of each root module; never plans or applies |
-| `tflint` | `false` | TFLint on each Terraform root module, using its `.tflint.hcl` if present |
-| `bicep` | `false` | Compiles every `.bicep` and `.bicepparam` file; never deploys |
-| `cloudformation` | `false` | `cfn-lint` on YAML, JSON, and `.template` files |
-| `iac-security` | `true` | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, and Bicep |
-| `codeql` | `false` | CodeQL `security-extended` analysis for each listed language, uploaded to code scanning |
-| `dependabot` | `false` | Fails on open high/critical Dependabot alerts |
-| `dependency-review` | `false` | Fails on newly introduced high/critical vulnerable dependencies; `pull_request` events only |
-| `secret-scanning` | `false` | Fails on open secret-scanning alerts |
+| Input               | Default | Check                                                                                                                                  |
+| ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `trivy`             | `true`  | Filesystem vulnerabilities, secrets, and IaC misconfiguration                                                                          |
+| `versions`          | `true`  | Renovate dependency lookups, including GitHub Actions, Terraform providers/modules, Docker images, and supported language dependencies |
+| `lint`              | `true`  | Super-Linter's supported languages and configuration files                                                                             |
+| `python`            | `false` | Python setup, optional requirements installation, and test command                                                                     |
+| `docker`            | `false` | Docker build; never pushes an image                                                                                                    |
+| `node`              | `false` | Node.js setup and build/test command                                                                                                   |
+| `go`                | `false` | Go setup and build/test command                                                                                                        |
+| `dotnet`            | `false` | .NET SDK setup and build/test command                                                                                                  |
+| `terraform`         | `false` | Recursive format check, backend-free init, and validation of each root module; never plans or applies                                  |
+| `tflint`            | `false` | TFLint on each Terraform root module, using its `.tflint.hcl` if present                                                               |
+| `bicep`             | `false` | Compiles every `.bicep` and `.bicepparam` file; never deploys                                                                          |
+| `cloudformation`    | `false` | `cfn-lint` on YAML, JSON, and `.template` files                                                                                        |
+| `iac-security`      | `true`  | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, and Bicep                                                |
+| `codeql`            | `false` | CodeQL `security-extended` analysis for each listed language, uploaded to code scanning                                                |
+| `dependabot`        | `false` | Fails on open high/critical Dependabot alerts                                                                                          |
+| `dependency-review` | `false` | Fails on newly introduced high/critical vulnerable dependencies; `pull_request` events only                                            |
+| `secret-scanning`   | `false` | Fails on open secret-scanning alerts                                                                                                   |
 
 Set any check to `false` to skip it. Enable project-specific checks only when their
 files exist; missing explicitly requested files are errors, not silent skips.
@@ -119,27 +119,27 @@ configuration; ignored, disabled, unsupported, or unresolvable dependencies cann
 be guaranteed current. Available updates and lookup errors fail the version check.
 No infrastructure credentials are supplied.
 
-| Additional input | Default | Purpose |
-| --- | --- | --- |
-| `mode` | `audit` | Failure/remediation policy below |
-| `severity` | `HIGH,CRITICAL` | Trivy severity threshold |
-| `python-version` | `3.12` | Python interpreter version |
-| `python-requirements` | empty | Requirements file to install; empty skips installation |
-| `python-command` | `python -m unittest discover -v` | Test shell command; install pytest in your requirements if using the example |
-| `docker-context` | `.` | Docker build context |
-| `dockerfile` | `Dockerfile` | Dockerfile path relative to repository root |
-| `node-version` | `24` | Node.js version for `actions/setup-node` |
-| `node-command` | `npm ci && npm test` | Trusted build/test shell command; `cd` first for a subdirectory |
-| `go-version` | empty | Go version; empty reads it from `go.mod` at the repository root |
-| `go-command` | `go vet ./... && go test ./...` | Trusted build/test shell command |
-| `dotnet-version` | `10.0.x` | .NET SDK version for `actions/setup-dotnet` |
-| `dotnet-command` | `dotnet test` | Trusted build/test shell command |
-| `terraform-directory` | `.` | Root module directories, comma- or newline-separated; used by `terraform` and `tflint` |
-| `terraform-version` | `latest` | Terraform CLI version; pin for reproducible runs |
-| `tflint-version` | `v0.65.0` | TFLint version |
-| `bicep-directory` | `bicep` | Directory searched recursively for Bicep files |
-| `cloudformation-directory` | `cloudformation` | Directory searched recursively for CloudFormation templates |
-| `codeql-language` | `javascript-typescript` | Comma- or newline-separated list of `javascript-typescript`, `python`, `ruby`, `c-cpp`, `go`, `java-kotlin`, `csharp` |
+| Additional input           | Default                          | Purpose                                                                                                               |
+| -------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `mode`                     | `audit`                          | Failure/remediation policy below                                                                                      |
+| `severity`                 | `HIGH,CRITICAL`                  | Trivy severity threshold                                                                                              |
+| `python-version`           | `3.12`                           | Python interpreter version                                                                                            |
+| `python-requirements`      | empty                            | Requirements file to install; empty skips installation                                                                |
+| `python-command`           | `python -m unittest discover -v` | Test shell command; install pytest in your requirements if using the example                                          |
+| `docker-context`           | `.`                              | Docker build context                                                                                                  |
+| `dockerfile`               | `Dockerfile`                     | Dockerfile path relative to repository root                                                                           |
+| `node-version`             | `24`                             | Node.js version for `actions/setup-node`                                                                              |
+| `node-command`             | `npm ci && npm test`             | Trusted build/test shell command; `cd` first for a subdirectory                                                       |
+| `go-version`               | empty                            | Go version; empty reads it from `go.mod` at the repository root                                                       |
+| `go-command`               | `go vet ./... && go test ./...`  | Trusted build/test shell command                                                                                      |
+| `dotnet-version`           | `10.0.x`                         | .NET SDK version for `actions/setup-dotnet`                                                                           |
+| `dotnet-command`           | `dotnet test`                    | Trusted build/test shell command                                                                                      |
+| `terraform-directory`      | `.`                              | Root module directories, comma- or newline-separated; used by `terraform` and `tflint`                                |
+| `terraform-version`        | `latest`                         | Terraform CLI version; pin for reproducible runs                                                                      |
+| `tflint-version`           | `v0.65.0`                        | TFLint version                                                                                                        |
+| `bicep-directory`          | `bicep`                          | Directory searched recursively for Bicep files                                                                        |
+| `cloudformation-directory` | `cloudformation`                 | Directory searched recursively for CloudFormation templates                                                           |
+| `codeql-language`          | `javascript-typescript`          | Comma- or newline-separated list of `javascript-typescript`, `python`, `ruby`, `c-cpp`, `go`, `java-kotlin`, `csharp` |
 
 ### Multiple Terraform roots and CodeQL languages
 
@@ -147,14 +147,14 @@ No infrastructure credentials are supplied.
 as before:
 
 ```yaml
-    with:
-      terraform: true
-      tflint: true
-      terraform-directory: |
-        infrastructure/network
-        infrastructure/app
-      codeql: true
-      codeql-language: python, javascript-typescript
+with:
+  terraform: true
+  tflint: true
+  terraform-directory: |
+    infrastructure/network
+    infrastructure/app
+  codeql: true
+  codeql-language: python, javascript-typescript
 ```
 
 Terraform roots are checked one after another in a single job. Every root runs
@@ -193,7 +193,7 @@ grant the extra permissions; everyone else keeps `contents: read`:
 jobs:
   checks:
     permissions:
-      actions: read          # needed for private repositories
+      actions: read # needed for private repositories
       contents: read
       security-events: write # upload to code scanning
     uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
@@ -212,8 +212,8 @@ access. Pass a fine-grained token restricted to the calling repository with only
 **Dependabot alerts: read** and/or **Secret scanning alerts: read**:
 
 ```yaml
-    secrets:
-      github-security-token: ${{ secrets.SECURITY_ALERTS_TOKEN }}
+secrets:
+  github-security-token: ${{ secrets.SECURITY_ALERTS_TOKEN }}
 ```
 
 A missing token fails the enabled check. These checks report existing alerts; they

@@ -9,7 +9,7 @@ if [[ ! -d "$BICEP_DIRECTORY" ]]; then
 fi
 mapfile -d '' templates < <(find "$BICEP_DIRECTORY" -type f -name '*.bicep' -print0)
 mapfile -d '' parameters < <(find "$BICEP_DIRECTORY" -type f -name '*.bicepparam' -print0)
-if (( ${#templates[@]} == 0 && ${#parameters[@]} == 0 )); then
+if ((${#templates[@]} == 0 && ${#parameters[@]} == 0)); then
   echo "::error::No .bicep or .bicepparam files found in $BICEP_DIRECTORY"
   exit 1
 fi

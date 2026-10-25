@@ -78,6 +78,9 @@ on:
       dotnet:
         value: ${{ jobs.dotnet.outputs.result }}
 
+# Each job sets its own minimal permissions.
+permissions: {}
+
 defaults:
   run:
     shell: bash

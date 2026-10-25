@@ -51,6 +51,9 @@ on:
       tflint:
         value: ${{ jobs.tflint.outputs.result }}
 
+# Each job sets its own minimal permissions.
+permissions: {}
+
 defaults:
   run:
     shell: bash

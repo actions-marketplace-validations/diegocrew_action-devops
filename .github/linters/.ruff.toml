@@ -1,0 +1,7 @@
+# Ruff configuration, used by Super-Linter. Matches Black's line length so the
+# two formatters agree.
+cache-dir = "/tmp/.ruff_cache"
+line-length = 88
+
+[lint]
+ignore = ["E203"]
