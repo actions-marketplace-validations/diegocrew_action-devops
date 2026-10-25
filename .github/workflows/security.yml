@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       codeql-language:
-        description: One CodeQL language present in the repository; call separately for other languages
+        description: CodeQL languages present in the repository, comma- or newline-separated
         type: string
         default: javascript-typescript
       dependabot:
@@ -117,17 +117,15 @@ jobs:
       - name: Scan infrastructure as code
         run: '"$RUNNER_TEMP/action-devops-scripts/checkov-scan.sh"'
 
-  codeql:
+  codeql-languages:
     if: inputs.codeql
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 5
     continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions: {}
     outputs:
-      result: ${{ job.status }}
+      languages: ${{ steps.languages.outputs.languages }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       - name: Check out action-devops scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,20 +138,81 @@ jobs:
         run: |
           mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
           rm -rf .action-devops
-      - name: Validate language
+      - name: Validate languages
+        id: languages
         env:
           CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
         run: '"$RUNNER_TEMP/action-devops-scripts/codeql-language.sh"'
+
+  # One analysis per language. Each leg records its own status under a
+  # language-named output; matrix outputs with unique names are merged.
+  codeql-analyze:
+    needs: codeql-languages
+    if: inputs.codeql && needs.codeql-languages.outputs.languages != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.codeql-languages.outputs.languages) }}
+    outputs:
+      javascript-typescript: ${{ steps.result.outputs.javascript-typescript }}
+      python: ${{ steps.result.outputs.python }}
+      ruby: ${{ steps.result.outputs.ruby }}
+      c-cpp: ${{ steps.result.outputs.c-cpp }}
+      go: ${{ steps.result.outputs.go }}
+      java-kotlin: ${{ steps.result.outputs.java-kotlin }}
+      csharp: ${{ steps.result.outputs.csharp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
-          languages: ${{ inputs.codeql-language }}
+          languages: ${{ matrix.language }}
           queries: security-extended
-          build-mode: ${{ contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language) && 'autobuild' || 'none' }}
+          build-mode: ${{ contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), matrix.language) && 'autobuild' || 'none' }}
       - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
-        if: contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), inputs.codeql-language)
+        if: contains(fromJSON('["c-cpp", "go", "java-kotlin", "csharp"]'), matrix.language)
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
-          category: /language:${{ inputs.codeql-language }}
+          category: /language:${{ matrix.language }}
+      - name: Record result
+        id: result
+        if: always()
+        env:
+          LANGUAGE: ${{ matrix.language }}
+          STATUS: ${{ job.status }}
+        run: echo "$LANGUAGE=$STATUS" >> "$GITHUB_OUTPUT"
+
+  codeql:
+    needs: [codeql-languages, codeql-analyze]
+    if: always() && inputs.codeql
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions: {}
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      - name: Check every language succeeded
+        env:
+          LANGUAGES: ${{ needs.codeql-languages.outputs.languages }}
+          RESULTS: ${{ toJSON(needs.codeql-analyze.outputs) }}
+        run: python3 "$RUNNER_TEMP/action-devops-scripts/codeql-results.py"
 
   dependabot:
     if: inputs.dependabot

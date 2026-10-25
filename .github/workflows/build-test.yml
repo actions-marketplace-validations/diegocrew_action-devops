@@ -32,11 +32,51 @@ on:
       dockerfile:
         type: string
         default: Dockerfile
+      node:
+        description: Set up Node.js and run a build/test command
+        type: boolean
+        default: false
+      node-version:
+        type: string
+        default: "24"
+      node-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: npm ci && npm test
+      go:
+        description: Set up Go and run a build/test command
+        type: boolean
+        default: false
+      go-version:
+        description: Go version; empty reads it from go.mod
+        type: string
+        default: ""
+      go-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: go vet ./... && go test ./...
+      dotnet:
+        description: Set up .NET and run a build/test command
+        type: boolean
+        default: false
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      dotnet-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: dotnet test
     outputs:
       python:
         value: ${{ jobs.python.outputs.result }}
       docker:
         value: ${{ jobs.docker.outputs.result }}
+      node:
+        value: ${{ jobs.node.outputs.result }}
+      go:
+        value: ${{ jobs.go.outputs.result }}
+      dotnet:
+        value: ${{ jobs.dotnet.outputs.result }}
 
 defaults:
   run:
@@ -107,3 +147,107 @@ jobs:
           CONTEXT: ${{ inputs.docker-context }}
           DOCKERFILE: ${{ inputs.dockerfile }}
         run: '"$RUNNER_TEMP/action-devops-scripts/docker-build.sh"'
+
+  node:
+    if: inputs.node
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager-cache: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      - name: Build and test
+        env:
+          COMMAND: ${{ inputs.node-command }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/run-command.sh"'
+
+  go:
+    if: inputs.go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version == '' && 'go.mod' || '' }}
+          cache: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      - name: Build and test
+        env:
+          COMMAND: ${{ inputs.go-command }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/run-command.sh"'
+
+  dotnet:
+    if: inputs.dotnet
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      - name: Build and test
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+          COMMAND: ${{ inputs.dotnet-command }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/run-command.sh"'

@@ -34,17 +34,23 @@ variables, and call scripts or pinned actions.
 
 ## Validate locally
 
-There is no automated test suite yet; run these before opening a pull request:
+The `CI` workflow runs this repository's own checks on every pull request. Before
+opening one, run:
 
 ```bash
-shellcheck .github/scripts/*.sh
+shellcheck -x .github/scripts/*.sh
 python3 -m py_compile .github/scripts/*.py
-actionlint
+actionlint -config-file .github/linters/actionlint.yml
 ```
 
-actionlint v1.7.12 does not recognize `$/` workflow references or the
-`job.workflow_repository` and `job.workflow_sha` fields and reports them as
-errors; ignore those specific errors and fix everything else.
+[`.github/linters/actionlint.yml`](.github/linters/actionlint.yml) ignores only
+the errors actionlint v1.7.12 reports for `$/` workflow references and the
+`job.workflow_repository` and `job.workflow_sha` fields, which GitHub supports
+but actionlint does not yet recognize. Super-Linter reads the same file.
+
+actionlint cannot follow `$/` calls, so it does not check the inputs that
+`allinone.yml` passes to the group workflows. Compare them by hand: every group
+input must be declared in `allinone.yml` with the same default and forwarded.
 
 Then run the workflows from a test repository that calls your branch, starting
 with `mode: audit`.

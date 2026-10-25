@@ -18,8 +18,8 @@ parallel jobs.
 | --- | --- |
 | `allinone.yml` | Validates `mode`, calls the groups below in parallel, and summarizes |
 | `quality.yml` | `lint` |
-| `build-test.yml` | `python`, `docker` |
-| `iac.yml` | `terraform`, `bicep`, `cloudformation` |
+| `build-test.yml` | `python`, `docker`, `node`, `go`, `dotnet` |
+| `iac.yml` | `terraform`, `tflint`, `bicep`, `cloudformation` |
 | `security.yml` | `trivy`, `iac-security`, `codeql`, `dependabot`, `dependency-review`, `secret-scanning` |
 | `dependencies.yml` | `versions`, plus advanced-mode fix PRs |
 
@@ -32,9 +32,10 @@ called directly with the same inputs.
 | --- | --- |
 | `validate-config.sh` | `allinone.yml` configuration |
 | `summarize.py` | `allinone.yml` summary |
-| `python-tests.sh`, `docker-build.sh` | `build-test.yml` |
-| `terraform-validate.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml` |
-| `checkov-scan.sh`, `codeql-language.sh`, `github-alerts.sh` | `security.yml` |
+| `python-tests.sh`, `docker-build.sh`, `run-command.sh` | `build-test.yml` |
+| `terraform-validate.sh`, `tflint.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml` |
+| `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml` |
+| `list.sh` | Sourced by scripts that accept comma- or newline-separated lists |
 | `renovate-lookup.sh`, `renovate-report.py` | `dependencies.yml` |
 | `create-release.sh` | `release.yml`, which publishes releases of this repository |
 
@@ -73,7 +74,17 @@ jobs:
 Pin to a release tag, or to that tag's full commit SHA for production use; see
 [releases](docs/releases/README.md) for versions and change logs. The workflow
 checks out the **calling repository** at the event revision (including the PR
-merge revision), not this repository. It runs on GitHub-hosted Ubuntu runners.
+merge revision), not this repository.
+
+### Platform requirements
+
+- **github.com only.** The groups are called with `$/` self-repository references
+  and check out scripts using `job.workflow_repository` and `job.workflow_sha`;
+  neither is available on GitHub Enterprise Server.
+- **GitHub-hosted Ubuntu runners.** Jobs use `ubuntu-latest`. `$/` references need
+  runner 2.336.0 or newer, which hosted runners already have.
+- **This repository must stay public**, because script checkouts use the caller's
+  token (see [Security boundaries](#security-boundaries)).
 
 ## Checks
 
@@ -87,11 +98,15 @@ groups run in parallel, and so do the checks inside each group.
 | `lint` | `true` | Super-Linter's supported languages and configuration files |
 | `python` | `false` | Python setup, optional requirements installation, and test command |
 | `docker` | `false` | Docker build; never pushes an image |
-| `terraform` | `false` | Recursive format check, backend-free init, and root-module validation; never plans or applies |
+| `node` | `false` | Node.js setup and build/test command |
+| `go` | `false` | Go setup and build/test command |
+| `dotnet` | `false` | .NET SDK setup and build/test command |
+| `terraform` | `false` | Recursive format check, backend-free init, and validation of each root module; never plans or applies |
+| `tflint` | `false` | TFLint on each Terraform root module, using its `.tflint.hcl` if present |
 | `bicep` | `false` | Compiles every `.bicep` and `.bicepparam` file; never deploys |
 | `cloudformation` | `false` | `cfn-lint` on YAML, JSON, and `.template` files |
 | `iac-security` | `true` | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, and Bicep |
-| `codeql` | `false` | CodeQL `security-extended` analysis for one language, uploaded to code scanning |
+| `codeql` | `false` | CodeQL `security-extended` analysis for each listed language, uploaded to code scanning |
 | `dependabot` | `false` | Fails on open high/critical Dependabot alerts |
 | `dependency-review` | `false` | Fails on newly introduced high/critical vulnerable dependencies; `pull_request` events only |
 | `secret-scanning` | `false` | Fails on open secret-scanning alerts |
@@ -113,11 +128,42 @@ No infrastructure credentials are supplied.
 | `python-command` | `python -m unittest discover -v` | Test shell command; install pytest in your requirements if using the example |
 | `docker-context` | `.` | Docker build context |
 | `dockerfile` | `Dockerfile` | Dockerfile path relative to repository root |
-| `terraform-directory` | `.` | Root module directory; call separately for independent roots |
+| `node-version` | `24` | Node.js version for `actions/setup-node` |
+| `node-command` | `npm ci && npm test` | Trusted build/test shell command; `cd` first for a subdirectory |
+| `go-version` | empty | Go version; empty reads it from `go.mod` at the repository root |
+| `go-command` | `go vet ./... && go test ./...` | Trusted build/test shell command |
+| `dotnet-version` | `10.0.x` | .NET SDK version for `actions/setup-dotnet` |
+| `dotnet-command` | `dotnet test` | Trusted build/test shell command |
+| `terraform-directory` | `.` | Root module directories, comma- or newline-separated; used by `terraform` and `tflint` |
 | `terraform-version` | `latest` | Terraform CLI version; pin for reproducible runs |
+| `tflint-version` | `v0.65.0` | TFLint version |
 | `bicep-directory` | `bicep` | Directory searched recursively for Bicep files |
 | `cloudformation-directory` | `cloudformation` | Directory searched recursively for CloudFormation templates |
-| `codeql-language` | `javascript-typescript` | One of `javascript-typescript`, `python`, `ruby`, `c-cpp`, `go`, `java-kotlin`, `csharp`; call separately per language |
+| `codeql-language` | `javascript-typescript` | Comma- or newline-separated list of `javascript-typescript`, `python`, `ruby`, `c-cpp`, `go`, `java-kotlin`, `csharp` |
+
+### Multiple Terraform roots and CodeQL languages
+
+`terraform-directory` and `codeql-language` accept lists; a single value behaves
+as before:
+
+```yaml
+    with:
+      terraform: true
+      tflint: true
+      terraform-directory: |
+        infrastructure/network
+        infrastructure/app
+      codeql: true
+      codeql-language: python, javascript-typescript
+```
+
+Terraform roots are checked one after another in a single job. Every root runs
+even if an earlier one fails, and the job summary lists each root's result.
+CodeQL runs one parallel job per language; the `codeql` result fails if any
+language does not succeed, and its job summary lists each language.
+
+TFLint uses each root's `.tflint.hcl`. Without one, only the bundled Terraform
+ruleset runs; add a provider plugin (for example AWS, Azure, or Google) in that file.
 
 ## Modes
 
@@ -132,9 +178,10 @@ No infrastructure credentials are supplied.
   repository's default branch, never on pull request events. `versions: false`
   also disables fix attempts.
 
-Invalid modes always fail. The final `summary` job reports each check's result by
-group, including a group workflow that failed to start; tool details remain in
-individual logs and dependency summaries.
+Invalid modes always fail. The final `summary` job shows the active mode and
+reports each check's result by group, including a group workflow that failed to
+start. Failures tolerated in `audit` or `advanced` mode are labeled as such, never
+as passed. Tool details remain in individual logs and job summaries.
 Use the summary check for branch protection when using restrict mode.
 
 ### GitHub security features
@@ -171,7 +218,9 @@ access. Pass a fine-grained token restricted to the calling repository with only
 
 A missing token fails the enabled check. These checks report existing alerts; they
 do not change alert state. `dependency-review` needs the dependency graph enabled
-and runs only for `pull_request` events.
+and runs only for `pull_request` events. On other events it shows as `skipped` in
+the summary. If it is the only security check enabled, the security group still
+starts but runs no checks; that is expected.
 
 ### Advanced-mode credentials
 
@@ -198,14 +247,17 @@ rules, and PR limits may defer updates.
 
 ## Security boundaries
 
-Use `pull_request`, not `pull_request_target`, to test untrusted changes. Python
-tests, package installation, Dockerfiles, Terraform providers, Bicep modules, and
-repository linter configuration can execute or fetch repository-controlled code:
+Use `pull_request`, not `pull_request_target`, to test untrusted changes. Python,
+Node.js, Go, and .NET builds and tests, package installation, Dockerfiles,
+Terraform providers, TFLint plugins, Bicep modules, and repository linter
+configuration can execute or fetch repository-controlled code:
 do not pass secrets or grant write permissions to these jobs. Every job sets
-minimal permissions except `codeql`, which inherits the caller's token; only the
-alert jobs, which do not check out code, receive `github-security-token`. `python-command` is intentionally a
-shell command and must come from trusted workflow configuration, never event
-titles, branch names, or other untrusted input.
+minimal permissions except the CodeQL analysis jobs, which inherit the caller's token; only the
+alert jobs, which do not check out code, receive `github-security-token`. The
+`*-command` inputs are intentionally shell commands and must come from trusted
+workflow configuration, never event titles, branch names, or other untrusted input.
+TFLint receives the read-only `GITHUB_TOKEN` only while downloading plugins, not
+while running them.
 
 Checkouts do not persist credentials. Script checkouts use the caller's
 `GITHUB_TOKEN`, which can read this public repository. A caller's token cannot

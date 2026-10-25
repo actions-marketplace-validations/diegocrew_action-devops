@@ -1,0 +1,9 @@
+# actionlint configuration, also used by Super-Linter.
+# actionlint v1.7.12 does not yet know GitHub's self-repository syntax ($/) or
+# the job.workflow_repository and job.workflow_sha context fields. Both are
+# documented by GitHub; ignore only those errors.
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'reusable workflow call "\$/\.github/workflows/[^"]+" at "uses" is not following the format'
+      - 'property "workflow_(repository|sha)" is not defined in object type'
