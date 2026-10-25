@@ -215,3 +215,9 @@ not check out or execute test code and disables Renovate package scripts and
 post-upgrade commands. The caller must still trust the default branch and its
 Renovate configuration. Third-party actions are pinned to commit SHAs; Renovate
 can propose updates to those pins.
+
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).
