@@ -3,8 +3,8 @@
 Each release has its own notes file, `vMAJOR.MINOR.PATCH.md`, which is also the
 body of its GitHub release page.
 
-| Version | Date | Summary |
-| --- | --- | --- |
+| Version             | Date       | Summary                                                                              |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------ |
 | [v0.5.0](v0.5.0.md) | 2026-10-24 | First release: configurable all-in-one checks in grouped workflows backed by scripts |
 
 ## Versioning
@@ -47,11 +47,17 @@ original tag run would reuse the old notes from the tagged commit.
 One-paragraph summary.
 
 ## New features
+
 ## Changed
+
 ## Fixed
+
 ## Security
+
 ## Deprecated / removed
+
 ## Known limitations
+
 ## Upgrading
 ```
 

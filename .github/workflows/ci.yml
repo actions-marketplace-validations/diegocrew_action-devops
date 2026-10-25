@@ -1,0 +1,23 @@
+name: CI
+
+# Dogfood: run this repository's own checks from the current commit.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    uses: $/.github/workflows/allinone.yml
+    with:
+      # Audit: scanners and version lookups report without blocking merges.
+      # The summary check still fails on invalid configuration or broken wiring.
+      mode: audit

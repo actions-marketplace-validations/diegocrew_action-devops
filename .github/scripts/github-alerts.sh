@@ -15,7 +15,10 @@ case "${1:-}" in
     permission="Secret scanning alerts"
     endpoint="repos/$REPOSITORY/secret-scanning/alerts?state=open&per_page=100"
     ;;
-  *) echo "::error::Usage: github-alerts.sh dependabot|secret-scanning"; exit 2 ;;
+  *)
+    echo "::error::Usage: github-alerts.sh dependabot|secret-scanning"
+    exit 2
+    ;;
 esac
 
 if [[ -z "${GH_TOKEN:-}" ]]; then
@@ -25,8 +28,8 @@ fi
 export GH_HOST="${GH_HOST#*://}"
 # gh rejects --slurp combined with --jq, so count with jq.
 count=$(gh api --paginate --slurp "$endpoint" | jq '[.[][]] | length')
-echo "Open $label alerts: $count" >> "$GITHUB_STEP_SUMMARY"
-if (( count > 0 )); then
+echo "Open $label alerts: $count" >>"$GITHUB_STEP_SUMMARY"
+if ((count > 0)); then
   echo "::error::Open $label alerts require attention"
   exit 1
 fi

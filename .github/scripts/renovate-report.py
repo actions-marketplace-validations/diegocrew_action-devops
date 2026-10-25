@@ -1,4 +1,7 @@
 """Report outdated dependencies from a Renovate lookup log. Env: REPORT."""
+
+# pylint: disable=invalid-name  # Hyphenated like the other check scripts.
+
 import json
 import os
 import sys
@@ -27,12 +30,16 @@ with open(os.environ["REPORT"], encoding="utf-8") as report:
                         )
 if not found:
     errors.append("Renovate did not produce a dependency lookup report")
+# Keep dependency metadata out of Markdown/HTML markup.
+messages = [
+    message.replace("\n", " ").replace("\r", " ") for message in updates + errors
+]
 with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
     summary.write("## Dependency versions\n\n")
-    for message in updates + errors:
-        # Keep dependency metadata out of Markdown/HTML markup.
-        summary.write("    " + message.replace("\n", " ").replace("\r", " ") + "\n")
-    if not updates and not errors:
+    summary.writelines(f"    {message}\n" for message in messages)
+    if not messages:
         summary.write("No supported dependency updates found.\n")
+for message in messages:
+    print(message)
 print(f"{len(updates)} available updates; {len(errors)} lookup errors")
-sys.exit(1 if updates or errors else 0)
+sys.exit(1 if messages else 0)

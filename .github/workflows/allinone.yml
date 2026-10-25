@@ -24,9 +24,25 @@ on:
         description: Build a Docker image without pushing it
         type: boolean
         default: false
+      node:
+        description: Set up Node.js and run a build/test command
+        type: boolean
+        default: false
+      go:
+        description: Set up Go and run a build/test command
+        type: boolean
+        default: false
+      dotnet:
+        description: Set up .NET and run a build/test command
+        type: boolean
+        default: false
       # Infrastructure as code
       terraform:
         description: Check formatting and validate Terraform without a backend
+        type: boolean
+        default: false
+      tflint:
+        description: Lint Terraform root modules with TFLint
         type: boolean
         default: false
       bicep:
@@ -85,13 +101,38 @@ on:
       dockerfile:
         type: string
         default: Dockerfile
+      node-version:
+        type: string
+        default: "24"
+      node-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: npm ci && npm test
+      go-version:
+        description: Go version; empty reads it from go.mod
+        type: string
+        default: ""
+      go-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: go vet ./... && go test ./...
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      dotnet-command:
+        description: Trusted shell command supplied by the calling workflow
+        type: string
+        default: dotnet test
       terraform-directory:
-        description: Terraform root module to validate
+        description: Terraform root modules to check, comma- or newline-separated
         type: string
         default: "."
       terraform-version:
         type: string
         default: latest
+      tflint-version:
+        type: string
+        default: v0.65.0
       bicep-directory:
         description: Directory containing Bicep templates
         type: string
@@ -101,7 +142,7 @@ on:
         type: string
         default: cloudformation
       codeql-language:
-        description: One CodeQL language present in the repository; call separately for other languages
+        description: CodeQL languages present in the repository, comma- or newline-separated
         type: string
         default: javascript-typescript
       severity:
@@ -158,7 +199,7 @@ jobs:
 
   build-test:
     needs: configuration
-    if: inputs.python || inputs.docker
+    if: inputs.python || inputs.docker || inputs.node || inputs.go || inputs.dotnet
     permissions:
       contents: read
     uses: $/.github/workflows/build-test.yml
@@ -166,29 +207,42 @@ jobs:
       mode: ${{ inputs.mode }}
       python: ${{ inputs.python }}
       docker: ${{ inputs.docker }}
+      node: ${{ inputs.node }}
+      go: ${{ inputs.go }}
+      dotnet: ${{ inputs.dotnet }}
       python-version: ${{ inputs.python-version }}
       python-requirements: ${{ inputs.python-requirements }}
       python-command: ${{ inputs.python-command }}
       docker-context: ${{ inputs.docker-context }}
       dockerfile: ${{ inputs.dockerfile }}
+      node-version: ${{ inputs.node-version }}
+      node-command: ${{ inputs.node-command }}
+      go-version: ${{ inputs.go-version }}
+      go-command: ${{ inputs.go-command }}
+      dotnet-version: ${{ inputs.dotnet-version }}
+      dotnet-command: ${{ inputs.dotnet-command }}
 
   iac:
     needs: configuration
-    if: inputs.terraform || inputs.bicep || inputs.cloudformation
+    if: inputs.terraform || inputs.tflint || inputs.bicep || inputs.cloudformation
     permissions:
       contents: read
     uses: $/.github/workflows/iac.yml
     with:
       mode: ${{ inputs.mode }}
       terraform: ${{ inputs.terraform }}
+      tflint: ${{ inputs.tflint }}
       bicep: ${{ inputs.bicep }}
       cloudformation: ${{ inputs.cloudformation }}
       terraform-directory: ${{ inputs.terraform-directory }}
       terraform-version: ${{ inputs.terraform-version }}
+      tflint-version: ${{ inputs.tflint-version }}
       bicep-directory: ${{ inputs.bicep-directory }}
       cloudformation-directory: ${{ inputs.cloudformation-directory }}
 
-  security:
+  # No permissions block: CodeQL must inherit security-events: write from callers
+  # that enable it, without forcing every caller to grant it.
+  security: # zizmor: ignore[excessive-permissions]
     needs: configuration
     if: >-
       inputs.trivy || inputs.iac-security || inputs.codeql ||

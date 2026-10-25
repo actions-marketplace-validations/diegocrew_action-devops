@@ -15,7 +15,7 @@ if [[ ! -f "$notes" ]]; then
 fi
 
 export GH_HOST="${GH_HOST#*://}"
-if gh release view "$TAG" > /dev/null 2>&1; then
+if gh release view "$TAG" >/dev/null 2>&1; then
   gh release edit "$TAG" --title "$TAG" --notes-file "$notes"
 else
   gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$notes"

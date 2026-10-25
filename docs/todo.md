@@ -5,40 +5,153 @@ Items below are proposals, not commitments; validate impact in a calling reposit
 
 ## 1. Validate the Existing Workflows (Highest Priority)
 
-- [ ] **Dogfood the current workflows**: Add a CI caller on pull requests and pushes to `main` that uses `./.github/workflows/allinone.yml` from the current commit, not an older release tag. Begin with checks that can run meaningfully in this repository; use `audit` for exploratory scanners and version lookups, since outdated dependencies should not unexpectedly block CI. Consider a scheduled run only if its cost and signal justify it. Confirm the `$/` group references and script checkout work end to end on GitHub Actions; both are documented by GitHub (self-repository syntax, `job.workflow_repository`, `job.workflow_sha`) and need runner 2.336.0 or newer. Expect `lint: true` to fail on this repository's own workflows until the actionlint bundled in Super-Linter accepts `$/` and `job.workflow_*` (v1.7.12 does not); exclude the workflow files or pin a newer actionlint rather than disabling the check.
-- [ ] **Test status propagation and policy on GitHub Actions**: Exercise successful, failed, and skipped checks; verify the outputs from group jobs using `${{ job.status }}`, the final summary, and `audit`, `restrict`, and `advanced` behavior. Use isolated/controlled failing fixtures rather than making normal PR CI fail. Unit tests with fabricated `needs` JSON do not prove reusable-workflow wiring.
-- [ ] **Add Python unit tests**: Cover JSON parsing, missing or malformed reports, Markdown output, and exit codes in [summarize.py](../.github/scripts/summarize.py) and [renovate-report.py](../.github/scripts/renovate-report.py). `renovate-report.py` does not implement modes; test modes only for `summarize.py`. Run tests in CI, either directly or through the `python` check with an explicit test command.
-- [ ] **Add shell-script fixture tests**: Cover valid and invalid inputs and failure paths for [validate-config.sh](../.github/scripts/validate-config.sh), [codeql-language.sh](../.github/scripts/codeql-language.sh), [github-alerts.sh](../.github/scripts/github-alerts.sh), and [create-release.sh](../.github/scripts/create-release.sh), mocking external `gh` calls.
-- [ ] **Finish validating the release path**: The live path is already proven: the `v0.5.0` tag push ran [release.yml](../.github/workflows/release.yml) successfully (run 40106403947), and the `workflow_dispatch` republish from `main` after PR #6 also succeeded (run 40106745440), so the published release carries the current notes. What remains is testing [create-release.sh](../.github/scripts/create-release.sh) with mocked `gh` for the invalid-tag, missing-notes, create, and edit branches. GitHub's tag-filter syntax supports `+` in the current `v[0-9]+.[0-9]+.[0-9]+` pattern; do not replace it on the assumption that `+` is a regex-only operator.
+- [x] **Dogfood the current workflows**: [ci.yml](../.github/workflows/ci.yml) runs
+      [allinone.yml](../.github/workflows/allinone.yml) from the current commit in `audit` mode on pull
+      requests, pushes to `main`, and manual dispatch. The first run (PR #8, run 40238862617) proved the
+      `$/` group calls, script checkout, `job.status` outputs, and summary end-to-end.
+      [actionlint.yml](../.github/linters/actionlint.yml) suppresses only actionlint's `$/` and
+      `job.workflow_*` false positives. Consider a scheduled run only if its cost and signal justify it.
+- [x] **Make this repository pass its own lint checks**: Fixed the findings from the first dogfood
+      runs: formatting (Black, Ruff, shfmt, Prettier), pylint and flake8, Markdown line length,
+      terminology, zizmor, and a non-executable `list.sh`. Deliberate patterns are configured with
+      reasons in `.github/linters/`: JSCPD ignores workflow YAML, whose repetition is structural
+      (`allinone.yml` redeclares every group input and each job checks out its own scripts), and Checkov
+      skips CKV2_GHA_1 because `allinone.yml` and `security.yml` must omit top-level permissions;
+      Checkov ignores inline skips for that check. `.editorconfig` sets `shfmt` to 2-space indentation.
+- [x] **Make the `versions` check pass**: The first runs reported 2 updates (Renovate 44.167.5
+      and `actions/dependency-review-action` v4, both now updated) and 1 lookup error, which no
+      longer occurs (run 40240936099: 0 updates, 0 lookup errors).
+      [renovate-report.py](../.github/scripts/renovate-report.py) now also prints every update and
+      error to the job log, not only to the job summary.
+- [ ] **Consider `restrict` mode for CI**: `lint` and `versions` pass as of run 40240936099. In
+      `restrict` mode, a new upstream release would fail CI and block merges until the pin is
+      updated; decide whether that is wanted, or keep `audit` and rely on the required `summary`
+      check for wiring failures only.
+- [ ] **Test status propagation and policy on GitHub Actions**: Exercise successful, failed, and
+      skipped checks; verify the outputs from group jobs using `${{ job.status }}`, the final summary,
+      and `audit`, `restrict`, and `advanced` behavior. Use isolated/controlled failing fixtures rather
+      than making normal PR CI fail. Unit tests with fabricated `needs` JSON do not prove
+      reusable-workflow wiring.
+- [ ] **Add Python unit tests**: Cover JSON parsing, missing or malformed reports, Markdown output,
+      and exit codes in [summarize.py](../.github/scripts/summarize.py),
+      [codeql-results.py](../.github/scripts/codeql-results.py), and
+      [renovate-report.py](../.github/scripts/renovate-report.py). `renovate-report.py` does not
+      implement modes; test modes only for `summarize.py`. Run tests in CI, either directly or through
+      the `python` check with an explicit test command.
+- [ ] **Add shell-script fixture tests**: Cover valid and invalid inputs and failure paths for
+      [validate-config.sh](../.github/scripts/validate-config.sh),
+      [codeql-language.sh](../.github/scripts/codeql-language.sh),
+      [list.sh](../.github/scripts/list.sh),
+      [terraform-validate.sh](../.github/scripts/terraform-validate.sh) and
+      [tflint.sh](../.github/scripts/tflint.sh) (multiple roots, one failing root, missing directory),
+      [run-command.sh](../.github/scripts/run-command.sh),
+      [github-alerts.sh](../.github/scripts/github-alerts.sh), and
+      [create-release.sh](../.github/scripts/create-release.sh), mocking `terraform`, `tflint`, and
+      `gh`. These cases were exercised once with throwaway mocks when list support was added; make them
+      a committed suite.
+- [ ] **Finish validating the release path**: The live path is already proven: the `v0.5.0` tag push
+      ran [release.yml](../.github/workflows/release.yml) successfully (run 40106403947), and the
+      `workflow_dispatch` republish from `main` after PR #6 also succeeded (run 40106745440), so the
+      published release carries the current notes. What remains is testing
+      [create-release.sh](../.github/scripts/create-release.sh) with mocked `gh` for the invalid-tag,
+      missing-notes, create, and edit branches. GitHub's tag-filter syntax supports `+` in the current
+      `v[0-9]+.[0-9]+.[0-9]+` pattern; do not replace it on the assumption that `+` is a
+      regular-expression-only operator.
 
 ## 2. Correctness and Failure Reporting
 
-- [ ] **Validate `mode` in direct group calls**: [README.md](../README.md) advertises calling group workflows directly, but only [allinone.yml](../.github/workflows/allinone.yml) uses [validate-config.sh](../.github/scripts/validate-config.sh). A typo passed to a group currently acts like `audit` because its jobs use `inputs.mode != 'restrict'`. Make invalid modes fail for direct callers too, and test each group.
-- [ ] **Report failed Renovate lookups**: When [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh) exits nonzero, the reporting step in [dependencies.yml](../.github/workflows/dependencies.yml) is skipped. Preserve a failed check while providing an actionable summary even when the report file is absent; test the failure path.
-- [ ] **Consider validating the release index**: [create-release.sh](../.github/scripts/create-release.sh) checks for release notes but not their entry in [releases/README.md](releases/README.md). Decide whether a missing index entry should block publishing or merely be caught by a documentation check.
+- [ ] **Validate `mode` in direct group calls**: [README.md](../README.md) advertises calling group
+      workflows directly, but only [allinone.yml](../.github/workflows/allinone.yml) uses
+      [validate-config.sh](../.github/scripts/validate-config.sh). A typo passed to a group currently
+      acts like `audit` because its jobs use `inputs.mode != 'restrict'`. Make invalid modes fail for
+      direct callers too, and test each group.
+- [ ] **Report failed Renovate lookups**: When
+      [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh) exits nonzero, the reporting step in
+      [dependencies.yml](../.github/workflows/dependencies.yml) is skipped. Preserve a failed check
+      while providing an actionable summary even when the report file is absent; test the failure path.
+- [ ] **Consider validating the release index**:
+      [create-release.sh](../.github/scripts/create-release.sh) checks for release notes but not their
+      entry in [releases/README.md](releases/README.md). Decide whether a missing index entry should
+      block publishing or merely be caught by a documentation check.
 
 ## 3. Reproducibility, Maintenance, and Performance
 
-- [ ] **Set a reproducibility policy for tool versions**: [bicep-build.sh](../.github/scripts/bicep-build.sh) installs the latest Bicep CLI, while [iac.yml](../.github/workflows/iac.yml) defaults Terraform to `latest`; hosted-runner tools also change. Decide what to pin or expose as inputs, document the policy, and test pin updates. Do not claim all other tools are already pinned.
-- [ ] **Consider a Renovate image digest**: [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh) uses a versioned Docker tag, not an immutable image digest. If pinning to `@sha256:...`, arrange automated digest updates so it does not become stale.
-- [ ] **Enable dependency updates for this repository**: Nothing updates the pinned action SHAs today: there is no `renovate.json` or `dependabot.yml`, Dependabot alerts are not enabled, and no bot has opened a PR. Choose Renovate (app installation plus config) or Dependabot (`github-actions` ecosystem) and enable Dependabot alerts in repository settings. Without this, the "pinned to commit SHAs" claim decays into "pinned to old commits".
-- [ ] **Cover nonstandard pins**: Default managers do not see versions inside scripts or action inputs. Pins needing custom managers or manual review: `checkov==...` in [checkov-scan.sh](../.github/scripts/checkov-scan.sh), `cfn-lint==...` in [cloudformation-lint.sh](../.github/scripts/cloudformation-lint.sh), the `ghcr.io/renovatebot/renovate:...` tag in [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh), and `renovate-version:` in [dependencies.yml](../.github/workflows/dependencies.yml); the last two must stay in sync. The "Pinned components" table in release notes is updated by nobody; decide whether to keep it or generate it. Verify extraction and update proposals rather than assuming a regex will find every pin.
-- [ ] **Measure caching before adding it**: If cold installs are significant, configure pip/dependency caching in the relevant workflow setup for [build-test.yml](../.github/workflows/build-test.yml), [security.yml](../.github/workflows/security.yml), and [iac.yml](../.github/workflows/iac.yml), not inside the scan scripts. Handle an empty optional requirements file. Adding `--disable-pip-version-check` to [python-tests.sh](../.github/scripts/python-tests.sh) is separate, low-priority cleanup.
-- [ ] **Consider configurable Super-Linter scope**: [quality.yml](../.github/workflows/quality.yml) hardcodes `VALIDATE_ALL_CODEBASE: true`. If callers need changed-file linting, add an input (defaulting to current behavior), forward it through [allinone.yml](../.github/workflows/allinone.yml), and test PR and non-PR behavior.
-- [ ] **Consider reducing repeated script checkouts**: The checkout/move sequence appears in 12 jobs. Refactor only if it preserves the called workflow's commit pin and keeps scripts out of caller build contexts and scanners. Skipping a move in jobs without caller checkout is a minor optimization, not a separate priority. While there, use a less collision-prone checkout path: `rm -rf .action-devops` runs inside the caller's workspace and would delete a caller directory of the same name.
+- [ ] **Set a reproducibility policy for tool versions**:
+      [bicep-build.sh](../.github/scripts/bicep-build.sh) installs the latest Bicep CLI, while
+      [iac.yml](../.github/workflows/iac.yml) defaults Terraform to `latest`; hosted-runner tools also
+      change. Decide what to pin or expose as inputs, document the policy, and test pin updates. Do not
+      claim all other tools are already pinned.
+- [ ] **Consider a Renovate image digest**:
+      [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh) uses a versioned Docker tag, not an
+      immutable image digest. If pinning to `@sha256:...`, arrange automated digest updates so it does
+      not become stale.
+- [ ] **Enable dependency updates for this repository**: Nothing updates the pinned action SHAs
+      today: there is no `renovate.json` or `dependabot.yml`, Dependabot alerts are not enabled, and no
+      bot has opened a PR. Choose Renovate (app installation plus config) or Dependabot
+      (`github-actions` ecosystem) and enable Dependabot alerts in repository settings. Without this,
+      the "pinned to commit SHAs" claim decays into "pinned to old commits".
+- [ ] **Cover nonstandard pins**: Default managers do not see versions inside scripts. Renovate does
+      detect `renovate-version:` in [dependencies.yml](../.github/workflows/dependencies.yml) (it
+      proposed 44.181.6). Pins still needing custom managers or manual review: `checkov==...` in
+      [checkov-scan.sh](../.github/scripts/checkov-scan.sh), `cfn-lint==...` in
+      [cloudformation-lint.sh](../.github/scripts/cloudformation-lint.sh), and the
+      `ghcr.io/renovatebot/renovate:...` tag in
+      [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh), which must stay in sync with
+      `renovate-version:`. The "Pinned components" table in release notes is updated by nobody; decide
+      whether to keep it or generate it. Verify extraction and update proposals rather than assuming a
+      regular expression will find every pin.
+- [ ] **Measure caching before adding it**: If cold installs are significant, configure
+      pip/dependency caching in the relevant workflow setup for
+      [build-test.yml](../.github/workflows/build-test.yml),
+      [security.yml](../.github/workflows/security.yml), and [iac.yml](../.github/workflows/iac.yml),
+      not inside the scan scripts. Handle an empty optional requirements file. Adding
+      `--disable-pip-version-check` to [python-tests.sh](../.github/scripts/python-tests.sh) is
+      separate, low-priority cleanup.
+- [ ] **Consider configurable Super-Linter scope**: [quality.yml](../.github/workflows/quality.yml)
+      hardcodes `VALIDATE_ALL_CODEBASE: true`. If callers need changed-file linting, add an input
+      (defaulting to current behavior), forward it through
+      [allinone.yml](../.github/workflows/allinone.yml), and test PR and non-PR behavior.
+- [ ] **Consider reducing repeated script checkouts**: The checkout/move sequence appears in 12
+      jobs. Refactor only if it preserves the called workflow's commit pin and keeps scripts out of
+      caller build contexts and scanners. Skipping a move in jobs without caller checkout is a minor
+      optimization, not a separate priority. While there, use a less collision-prone checkout path: `rm
+-rf .action-devops` runs inside the caller's workspace and would delete a caller directory of the
+      same name.
 
 ## 4. Optional Features (Demand-Driven)
 
-- [ ] **Multiple CodeQL languages and Terraform roots**: First establish caller demand and the expected per-language/per-root result reporting. Then evaluate CodeQL's multi-language configuration versus a matrix, and parallel Terraform root validation, without changing existing single-value inputs unexpectedly.
-- [ ] **Additional build and test ecosystems**: Add Node.js/TypeScript, Go, or .NET checks to [build-test.yml](../.github/workflows/build-test.yml) when a caller needs them. Consider Hadolint separately. Switch [docker-build.sh](../.github/scripts/docker-build.sh) to Buildx only for a concrete build requirement.
-- [ ] **Optional `tflint` check**: Add to [iac.yml](../.github/workflows/iac.yml) if provider-specific Terraform linting is needed; define its configuration, version, and expected failure behavior.
-- [ ] **Optional SARIF uploads**: If callers have Code Scanning and grant the needed permissions, consider Trivy/Checkov SARIF uploads in [security.yml](../.github/workflows/security.yml). Keep the default read-only checks and summaries working without uploads.
-- [ ] **Improve the human-readable summary**: In [summarize.py](../.github/scripts/summarize.py), show the active mode and clearer success/failure/skipped labels without obscuring the raw result or implying that a failed check passed in `audit` mode.
-- [ ] **Document dependency-review on non-PR events**: [security.yml](../.github/workflows/security.yml) intentionally skips that check outside pull requests. If it is the only selected security check, the group may start with all checks skipped. Document this first; change the group condition only if empty runs are a demonstrated problem and the skipped result remains visible.
-- [ ] **Document platform limits in the README**: [README.md](../README.md) does not say what [v0.5.0.md](releases/v0.5.0.md) does: `$/` references and `job.workflow_*` fields are github.com only (not GitHub Enterprise Server) and need runner 2.336.0 or newer. Callers on GHES or self-hosted runners should learn this from the README, not from release notes.
+- [x] **Multiple CodeQL languages and Terraform roots**: `codeql-language` and `terraform-directory`
+      accept comma- or newline-separated lists; single values behave as before. CodeQL uses a matrix
+      with per-language result outputs and a `codeql` result job; Terraform roots run sequentially in
+      one job, all roots always run, and the job summary lists each. Still untested on GitHub Actions;
+      covered by the status-propagation item in section 1.
+- [x] **Additional build and test ecosystems**: `node`, `go`, and `dotnet` checks in
+      [build-test.yml](../.github/workflows/build-test.yml), each a toolchain setup plus a trusted
+      command via [run-command.sh](../.github/scripts/run-command.sh). Still open: Hadolint (consider
+      separately) and switching [docker-build.sh](../.github/scripts/docker-build.sh) to Buildx (only
+      for a concrete build requirement).
+- [x] **Optional `tflint` check**: In [iac.yml](../.github/workflows/iac.yml), pinned by
+      `tflint-version`, configured by each root's `.tflint.hcl`; fails on any finding; runs on every
+      root in `terraform-directory`.
+- [ ] **Optional SARIF uploads**: If callers have Code Scanning and grant the needed permissions,
+      consider Trivy/Checkov SARIF uploads in [security.yml](../.github/workflows/security.yml). Keep
+      the default read-only checks and summaries working without uploads.
+- [x] **Improve the human-readable summary**: [summarize.py](../.github/scripts/summarize.py) shows
+      the mode and its policy, labeled results, failures marked as tolerated in `audit`/`advanced` mode,
+      and a failed-check list.
+- [x] **Document dependency-review on non-PR events**: Documented in [README.md](../README.md); the
+      group condition is unchanged.
+- [x] **Document platform limits in `README.md`**: Added a "Platform requirements" section.
 
 ## 5. Repository Governance
 
 - [x] **Choose and add an open-source license**: MIT, in [LICENSE](../LICENSE).
-- [x] **Add `SECURITY.md` and `CONTRIBUTING.md`**: [SECURITY.md](../SECURITY.md) routes reports through GitHub private vulnerability reporting (now enabled); [CONTRIBUTING.md](../CONTRIBUTING.md) has the change checklist and local shellcheck/actionlint commands. Update its "Validate locally" section once tests exist.
-- [ ] **Require the dogfood `summary` check on `main`**: The "Protect main" ruleset (id 25838214) already blocks deletion and force pushes and requires pull requests with zero approvals. After the CI caller is stable, add a required status check for its `summary` job to that ruleset, which also exercises the branch-protection advice given to callers in the README.
+- [x] **Add `SECURITY.md` and `CONTRIBUTING.md`**: [SECURITY.md](../SECURITY.md) routes reports
+      through GitHub private vulnerability reporting (now enabled);
+      [CONTRIBUTING.md](../CONTRIBUTING.md) has the change checklist and local shellcheck/actionlint
+      commands. Update its "Validate locally" section once tests exist.
+- [x] **Require the dogfood `summary` check on `main`**: The "Protect main" ruleset (ID 25838214)
+      blocks deletion and force pushes, requires pull requests (zero approvals), and requires the
+      `checks / summary` status check from GitHub Actions. In `audit` mode that check fails only on
+      invalid configuration or broken workflow wiring; it becomes a quality gate once CI moves to
+      `restrict`.

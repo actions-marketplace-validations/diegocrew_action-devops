@@ -19,13 +19,20 @@ on:
         description: Lint CloudFormation templates
         type: boolean
         default: false
+      tflint:
+        description: Lint Terraform root modules with TFLint
+        type: boolean
+        default: false
       terraform-directory:
-        description: Terraform root module to validate
+        description: Terraform root modules to check, comma- or newline-separated
         type: string
         default: "."
       terraform-version:
         type: string
         default: latest
+      tflint-version:
+        type: string
+        default: v0.65.0
       bicep-directory:
         description: Directory containing Bicep templates
         type: string
@@ -41,6 +48,11 @@ on:
         value: ${{ jobs.bicep.outputs.result }}
       cloudformation:
         value: ${{ jobs.cloudformation.outputs.result }}
+      tflint:
+        value: ${{ jobs.tflint.outputs.result }}
+
+# Each job sets its own minimal permissions.
+permissions: {}
 
 defaults:
   run:
@@ -76,10 +88,51 @@ jobs:
         run: |
           mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
           rm -rf .action-devops
-      - name: Format and validate root module
+      - name: Format and validate root modules
         env:
           TF_DIRECTORY: ${{ inputs.terraform-directory }}
         run: '"$RUNNER_TEMP/action-devops-scripts/terraform-validate.sh"'
+
+  tflint:
+    if: inputs.tflint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ inputs.mode != 'restrict' }}
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ inputs.tflint-version }}
+          tflint_wrapper: false
+      - name: Check out action-devops scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .action-devops
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Move scripts out of the workspace
+        run: |
+          mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
+          rm -rf .action-devops
+      # The token only raises GitHub API rate limits for plugin downloads; the
+      # lint step that runs plugin code does not receive it.
+      - name: Install TFLint plugins
+        env:
+          TF_DIRECTORY: ${{ inputs.terraform-directory }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/tflint.sh" init'
+      - name: Lint root modules
+        env:
+          TF_DIRECTORY: ${{ inputs.terraform-directory }}
+        run: '"$RUNNER_TEMP/action-devops-scripts/tflint.sh" lint'
 
   bicep:
     if: inputs.bicep
