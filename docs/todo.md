@@ -18,12 +18,15 @@ Items below are proposals, not commitments; validate impact in a calling reposit
       (`allinone.yml` redeclares every group input and each job checks out its own scripts), and Checkov
       skips CKV2_GHA_1 because `allinone.yml` and `security.yml` must omit top-level permissions;
       Checkov ignores inline skips for that check. `.editorconfig` sets `shfmt` to 2-space indentation.
-- [ ] **Make the `versions` check pass, then consider `restrict`**: The first runs reported 2
-      updates (Renovate 44.167.5 and `actions/dependency-review-action` v4, both now updated) and 1
-      lookup error whose details went only to the job summary.
-      [renovate-report.py](../.github/scripts/renovate-report.py) now also prints every update and error
-      to the job log; read the next run's log and fix or configure the lookup error. Once `lint` and
-      `versions` pass, consider `restrict` mode for CI.
+- [x] **Make the `versions` check pass**: The first runs reported 2 updates (Renovate 44.167.5
+      and `actions/dependency-review-action` v4, both now updated) and 1 lookup error, which no
+      longer occurs (run 40240936099: 0 updates, 0 lookup errors).
+      [renovate-report.py](../.github/scripts/renovate-report.py) now also prints every update and
+      error to the job log, not only to the job summary.
+- [ ] **Consider `restrict` mode for CI**: `lint` and `versions` pass as of run 40240936099. In
+      `restrict` mode, a new upstream release would fail CI and block merges until the pin is
+      updated; decide whether that is wanted, or keep `audit` and rely on the required `summary`
+      check for wiring failures only.
 - [ ] **Test status propagation and policy on GitHub Actions**: Exercise successful, failed, and
       skipped checks; verify the outputs from group jobs using `${{ job.status }}`, the final summary,
       and `audit`, `restrict`, and `advanced` behavior. Use isolated/controlled failing fixtures rather
