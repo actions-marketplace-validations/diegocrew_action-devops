@@ -16,5 +16,5 @@ docker run --rm --user "$(id -u):$(id -g)" \
   --env RENOVATE_ALLOW_SCRIPTS=false \
   --env RENOVATE_IGNORE_SCRIPTS=true \
   --env 'RENOVATE_ALLOWED_COMMANDS=[]' \
-  ghcr.io/renovatebot/renovate:44.182.1 \
+  ghcr.io/renovatebot/renovate:44.182.2 \
   --platform=local --dry-run=lookup

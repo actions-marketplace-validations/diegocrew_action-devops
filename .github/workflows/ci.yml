@@ -32,7 +32,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./
+      # Tests the root action from this checkout, as callers would use it.
+      - uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: audit
           checkout: "false"
