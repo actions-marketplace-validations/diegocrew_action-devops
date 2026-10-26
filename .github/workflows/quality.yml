@@ -23,7 +23,20 @@ defaults:
     shell: bash
 
 jobs:
+  # Direct callers bypass allinone.yml's validation; reject unknown modes here too.
+  mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate mode
+        if: ${{ !contains(fromJSON('["audit", "restrict", "advanced"]'), inputs.mode) }}
+        run: |
+          echo "::error::mode must be audit, restrict, or advanced"
+          exit 1
+
   lint:
+    needs: mode
     if: inputs.lint
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -44,6 +57,9 @@ jobs:
           MULTI_STATUS: false
           ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
           FAIL_ON_CONFLICTING_TOOLS_ENABLED: true
+          # The trivy and iac-security checks already run these scanners.
+          VALIDATE_CHECKOV: false
+          VALIDATE_TRIVY: false
           VALIDATE_CSS: false
           VALIDATE_CSS_PRETTIER: false
           VALIDATE_GRAPHQL_PRETTIER: false

@@ -86,7 +86,20 @@ defaults:
     shell: bash
 
 jobs:
+  # Direct callers bypass allinone.yml's validation; reject unknown modes here too.
+  mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate mode
+        if: ${{ !contains(fromJSON('["audit", "restrict", "advanced"]'), inputs.mode) }}
+        run: |
+          echo "::error::mode must be audit, restrict, or advanced"
+          exit 1
+
   python:
+    needs: mode
     if: inputs.python
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -121,6 +134,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/python-tests.sh"'
 
   docker:
+    needs: mode
     if: inputs.docker
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -152,6 +166,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/docker-build.sh"'
 
   node:
+    needs: mode
     if: inputs.node
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -186,6 +201,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/run-command.sh"'
 
   go:
+    needs: mode
     if: inputs.go
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -221,6 +237,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/run-command.sh"'
 
   dotnet:
+    needs: mode
     if: inputs.dotnet
     runs-on: ubuntu-latest
     timeout-minutes: 30

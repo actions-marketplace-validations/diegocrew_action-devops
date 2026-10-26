@@ -149,7 +149,7 @@ configuration validation. The action runs the same checks in sequence.
 | `tflint`            | `false` | TFLint on each Terraform root module, using its `.tflint.hcl` if present                                                               |
 | `bicep`             | `false` | Compiles every `.bicep` and `.bicepparam` file; never deploys                                                                          |
 | `cloudformation`    | `false` | `cfn-lint` on YAML, JSON, and `.template` files                                                                                        |
-| `iac-security`      | `true`  | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, and Bicep                                                |
+| `iac-security`      | `true`  | Checkov security and best-practice checks for Terraform, CloudFormation, ARM, Bicep, and workflows                                     |
 | `codeql`            | `false` | CodeQL `security-extended` analysis for each listed language, uploaded to code scanning                                                |
 | `dependabot`        | `false` | Fails on open high/critical Dependabot alerts                                                                                          |
 | `dependency-review` | `false` | Fails on newly introduced high/critical vulnerable dependencies; `pull_request` events only                                            |

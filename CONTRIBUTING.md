@@ -28,6 +28,8 @@ variables, and call scripts or pinned actions.
 - [ ] Every input in a group workflow is also declared and forwarded in
       `allinone.yml`, and every check job exposes `result: ${{ job.status }}`
       as a group output so the summary can report it.
+- [ ] Every check job in a group workflow has `needs: mode`, so direct callers
+      cannot run checks with an invalid mode.
 - [ ] [README.md](README.md) input, check, and script tables are updated.
 - [ ] User-visible changes are noted for the next release in
       [docs/releases](docs/releases/README.md).

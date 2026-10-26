@@ -5,22 +5,7 @@ available for parallel jobs and per-check permissions. Prioritize tests and
 reliability across both entry points before adding inputs. Items are proposals;
 validate demand in a calling repository.
 
-## 1. Correctness and Failure Reporting
-
-- [ ] **Validate `mode` in direct group-workflow calls**: The action and
-      [allinone.yml](../.github/workflows/allinone.yml) validate the mode, but callers may invoke a
-      group workflow directly. Ensure a typo cannot silently act like `audit`, and test each direct
-      group entry point.
-- [ ] **Report failed Renovate lookups**: When
-      [renovate-lookup.sh](../.github/scripts/renovate-lookup.sh) exits nonzero, the reporting step in
-      [dependencies.yml](../.github/workflows/dependencies.yml) is skipped. Preserve a failed check
-      while providing an actionable summary even when the report file is absent; test the failure path.
-- [ ] **Consider validating the release index**:
-      [create-release.sh](../.github/scripts/create-release.sh) checks for release notes but not their
-      entry in [releases/README.md](releases/README.md). Decide whether a missing index entry should
-      block publishing or merely be caught by a documentation check.
-
-## 2. Reproducibility, Maintenance, and Performance
+## 1. Reproducibility, Maintenance, and Performance
 
 - [ ] **Set a reproducibility policy for tool versions**:
       [bicep-build.sh](../.github/scripts/bicep-build.sh) installs the latest Bicep CLI, while
@@ -56,7 +41,7 @@ validate demand in a calling repository.
       refactor must preserve the called workflow's commit pin and keep scripts out of caller build
       contexts and scanners. Also avoid deleting a caller's `.action-devops` directory during cleanup.
 
-## 3. Optional Features (Demand-Driven)
+## 2. Optional Features (Demand-Driven)
 
 - [ ] **Validate multi-root Terraform and CodeQL behavior**: Add tests for list parsing and
       per-language results; exercise the reusable workflow's language matrix and the action's

@@ -66,7 +66,20 @@ defaults:
     shell: bash
 
 jobs:
+  # Direct callers bypass allinone.yml's validation; reject unknown modes here too.
+  mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate mode
+        if: ${{ !contains(fromJSON('["audit", "restrict", "advanced"]'), inputs.mode) }}
+        run: |
+          echo "::error::mode must be audit, restrict, or advanced"
+          exit 1
+
   trivy:
+    needs: mode
     if: inputs.trivy
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -88,8 +101,10 @@ jobs:
           severity: ${{ inputs.severity }}
           exit-code: "1"
           format: table
+          version: v0.76.1
 
   iac-security:
+    needs: mode
     if: inputs.iac-security
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -118,6 +133,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/checkov-scan.sh"'
 
   codeql-languages:
+    needs: mode
     if: inputs.codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -147,7 +163,7 @@ jobs:
   # One analysis per language. Each leg records its own status under a
   # language-named output; matrix outputs with unique names are merged.
   codeql-analyze:
-    needs: codeql-languages
+    needs: [mode, codeql-languages]
     if: inputs.codeql && needs.codeql-languages.outputs.languages != ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -187,8 +203,8 @@ jobs:
         run: echo "$LANGUAGE=$STATUS" >> "$GITHUB_OUTPUT"
 
   codeql:
-    needs: [codeql-languages, codeql-analyze]
-    if: always() && inputs.codeql
+    needs: [mode, codeql-languages, codeql-analyze]
+    if: always() && inputs.codeql && needs.mode.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     continue-on-error: ${{ inputs.mode != 'restrict' }}
@@ -215,6 +231,7 @@ jobs:
         run: python3 "$RUNNER_TEMP/action-devops-scripts/codeql-results.py"
 
   dependabot:
+    needs: mode
     if: inputs.dependabot
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -243,6 +260,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/github-alerts.sh" dependabot'
 
   dependency-review:
+    needs: mode
     if: inputs.dependency-review && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -261,6 +279,7 @@ jobs:
           comment-summary-in-pr: never
 
   secret-scanning:
+    needs: mode
     if: inputs.secret-scanning
     runs-on: ubuntu-latest
     timeout-minutes: 10

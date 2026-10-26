@@ -35,8 +35,8 @@ uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
    ```
 
 3. The `Release` workflow (`.github/workflows/release.yml`) creates the GitHub
-   release from the notes file. Pushing a tag without a notes file fails the
-   workflow.
+   release from the notes file. Pushing a tag without a notes file or a table
+   entry above fails the workflow.
 
 To fix published release text, edit the notes file on `main`, then run the
 `Release` workflow manually (Actions → Release → Run workflow) with the existing

@@ -9,6 +9,15 @@ import sys
 found = False
 updates = []
 errors = []
+if not os.path.isfile(os.environ["REPORT"]):
+    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+        summary.write(
+            "## Dependency versions\n\n"
+            "The Renovate lookup failed before writing a report; "
+            "see the lookup step log.\n"
+        )
+    print("::error::Renovate lookup produced no report; see the lookup step log")
+    sys.exit(1)
 with open(os.environ["REPORT"], encoding="utf-8") as report:
     for line in report:
         record = json.loads(line)

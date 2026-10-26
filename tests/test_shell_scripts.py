@@ -263,11 +263,64 @@ class ShellScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Open secret-scanning alerts: 0", self.summary.read_text())
 
+    def _install_checkov_stubs(self):
+        """Stub venv creation so checkov-scan.sh runs a fake Checkov."""
+        checkov = self.root / "checkov-stub"
+        checkov.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$*" >>"$TOOL_LOG"\n'
+            'printf "%b" "${CHECKOV_OUTPUT:-}"\n'
+            'exit "${CHECKOV_EXIT:-0}"\n',
+            encoding="utf-8",
+        )
+        self._executable(
+            "python3",
+            "#!/usr/bin/env bash\n"
+            'if [[ "$1 $2" == "-m venv" ]]; then\n'
+            '  mkdir -p "$3/bin"\n'
+            "  printf '#!/usr/bin/env bash\\n' >\"$3/bin/python\"\n"
+            f'  cp "{checkov}" "$3/bin/checkov"\n'
+            '  chmod +x "$3/bin/python" "$3/bin/checkov"\n'
+            "fi\n",
+        )
+
+    def test_checkov_reports_when_nothing_is_scanned(self):
+        """Explain an empty Checkov run instead of printing nothing."""
+        self._install_checkov_stubs()
+        result = self._run_script("checkov-scan.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("::notice::Checkov found no", result.stdout)
+        self.assertIn("no Terraform", self.summary.read_text(encoding="utf-8"))
+        self.assertIn("github_actions", self.log.read_text(encoding="utf-8"))
+
+    def test_checkov_uses_linter_config_and_propagates_failure(self):
+        """Pass the Super-Linter config and keep Checkov's exit status."""
+        self._install_checkov_stubs()
+        (self.root / ".github" / "linters").mkdir(parents=True)
+        (self.root / ".github" / "linters" / ".checkov.yaml").write_text(
+            "quiet: true\n", encoding="utf-8"
+        )
+        result = self._run_script(
+            "checkov-scan.sh",
+            CHECKOV_OUTPUT="Passed checks: 3, Failed checks: 1\\n",
+            CHECKOV_EXIT="1",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("::notice::", result.stdout)
+        self.assertIn(
+            "--config-file .github/linters/.checkov.yaml",
+            self.log.read_text(encoding="utf-8"),
+        )
+
     def _prepare_release_fixture(self):
         """Create release notes and a mocked GitHub CLI."""
         notes = self.root / "docs" / "releases"
         notes.mkdir(parents=True)
         (notes / "v1.2.3.md").write_text("# v1.2.3\n", encoding="utf-8")
+        (notes / "v2.0.0.md").write_text("# v2.0.0\n", encoding="utf-8")
+        (notes / "README.md").write_text(
+            "| [v1.2.3](v1.2.3.md) | 2026-01-01 | Test |\n", encoding="utf-8"
+        )
         self._executable(
             "gh",
             "#!/usr/bin/env bash\n"
@@ -278,15 +331,19 @@ class ShellScriptTests(unittest.TestCase):
         )
 
     def test_release_script_rejects_invalid_tag_and_missing_notes(self):
-        """Reject invalid tags and missing release notes."""
+        """Reject invalid tags, missing notes, and unindexed releases."""
         self._prepare_release_fixture()
         result = self._run_script("create-release.sh", cwd=self.root, TAG="1.2.3")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Release tags must look like", result.stdout)
 
-        result = self._run_script("create-release.sh", cwd=self.root, TAG="v2.0.0")
+        result = self._run_script("create-release.sh", cwd=self.root, TAG="v3.0.0")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Release notes missing", result.stdout)
+
+        result = self._run_script("create-release.sh", cwd=self.root, TAG="v2.0.0")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("docs/releases/README.md", result.stdout)
         self.assertFalse(self.log.exists())
 
     def test_release_script_creates_and_updates_release(self):

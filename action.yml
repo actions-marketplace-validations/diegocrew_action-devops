@@ -159,6 +159,9 @@ runs:
         MULTI_STATUS: false
         ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
         FAIL_ON_CONFLICTING_TOOLS_ENABLED: true
+        # The trivy and iac-security checks already run these scanners.
+        VALIDATE_CHECKOV: false
+        VALIDATE_TRIVY: false
         VALIDATE_CSS: false
         VALIDATE_CSS_PRETTIER: false
         VALIDATE_GRAPHQL_PRETTIER: false
@@ -335,6 +338,7 @@ runs:
         severity: ${{ inputs.severity }}
         exit-code: "1"
         format: table
+        version: v0.76.1
 
     - name: Scan infrastructure as code with Checkov
       id: iac-security
@@ -429,7 +433,7 @@ runs:
       run: '"$GITHUB_ACTION_PATH/.github/scripts/renovate-lookup.sh"'
     - name: Report outdated dependencies
       id: versions
-      if: inputs.versions == 'true' && steps.versions-lookup.outcome == 'success'
+      if: inputs.versions == 'true' && steps.versions-lookup.outcome != 'skipped'
       continue-on-error: true
       shell: bash
       env:

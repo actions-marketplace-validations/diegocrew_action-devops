@@ -59,7 +59,20 @@ defaults:
     shell: bash
 
 jobs:
+  # Direct callers bypass allinone.yml's validation; reject unknown modes here too.
+  mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate mode
+        if: ${{ !contains(fromJSON('["audit", "restrict", "advanced"]'), inputs.mode) }}
+        run: |
+          echo "::error::mode must be audit, restrict, or advanced"
+          exit 1
+
   terraform:
+    needs: mode
     if: inputs.terraform
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -94,6 +107,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/terraform-validate.sh"'
 
   tflint:
+    needs: mode
     if: inputs.tflint
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -135,6 +149,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/tflint.sh" lint'
 
   bicep:
+    needs: mode
     if: inputs.bicep
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -165,6 +180,7 @@ jobs:
         run: '"$RUNNER_TEMP/action-devops-scripts/bicep-build.sh"'
 
   cloudformation:
+    needs: mode
     if: inputs.cloudformation
     runs-on: ubuntu-latest
     timeout-minutes: 20

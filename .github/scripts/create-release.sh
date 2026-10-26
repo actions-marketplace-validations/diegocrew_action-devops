@@ -13,6 +13,10 @@ if [[ ! -f "$notes" ]]; then
   echo "::error::Release notes missing: $notes"
   exit 1
 fi
+if ! grep -qF "]($TAG.md)" docs/releases/README.md; then
+  echo "::error::Add $TAG to the table in docs/releases/README.md"
+  exit 1
+fi
 
 export GH_HOST="${GH_HOST#*://}"
 if gh release view "$TAG" >/dev/null 2>&1; then

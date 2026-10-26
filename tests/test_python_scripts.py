@@ -267,10 +267,13 @@ class RenovateReportTests(unittest.TestCase):
 
     def test_missing_and_malformed_reports_fail(self):
         """Fail when the report is missing or contains malformed JSON."""
-        for lines in (None, "not-json\n"):
-            with self.subTest(lines=lines):
-                result, _ = self.run_report(lines)
-                self.assertNotEqual(result.returncode, 0)
+        result, summary = self.run_report(None)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Renovate lookup produced no report", result.stdout)
+        self.assertIn("lookup failed before writing a report", summary)
+
+        result, _ = self.run_report("not-json\n")
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":
