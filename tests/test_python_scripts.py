@@ -2,11 +2,11 @@
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +14,7 @@ SCRIPTS = ROOT / ".github" / "scripts"
 
 
 def run_script(name, values):
+    """Run a report script with an isolated environment."""
     env = os.environ.copy()
     env.update({key: str(value) for key, value in values.items()})
     return subprocess.run(
@@ -26,12 +27,16 @@ def run_script(name, values):
 
 
 class ActionResultsTests(unittest.TestCase):
+    """Verify composite-action step outcomes become group results."""
+
     def run_converter(self, steps):
+        """Convert fabricated step outcomes to JSON results."""
         result = run_script("action-results.py", {"STEPS": json.dumps(steps)})
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
     def test_maps_failed_setup_and_skipped_check(self):
+        """Map failed setup and skipped steps to stable results."""
         results = self.run_converter(
             {
                 "python-setup": {"outcome": "failure"},
@@ -44,6 +49,7 @@ class ActionResultsTests(unittest.TestCase):
         self.assertEqual(results["iac"]["outputs"]["terraform"], "")
 
     def test_failure_takes_precedence_over_success_and_cancelled(self):
+        """Aggregate multiple step outcomes with failure precedence."""
         results = self.run_converter(
             {
                 "versions-lookup": {"outcome": "success"},
@@ -56,12 +62,16 @@ class ActionResultsTests(unittest.TestCase):
         self.assertEqual(results["security"]["outputs"]["codeql"], "failure")
 
     def test_malformed_steps_json_fails(self):
+        """Reject malformed serialized action step outcomes."""
         result = run_script("action-results.py", {"STEPS": "{"})
         self.assertNotEqual(result.returncode, 0)
 
 
 class SummaryTests(unittest.TestCase):
+    """Verify result summaries and mode-specific exit policies."""
+
     def run_summary(self, results, mode):
+        """Run summarize.py with temporary summary output."""
         with tempfile.TemporaryDirectory() as directory:
             summary_path = Path(directory) / "summary.md"
             values = {"GITHUB_STEP_SUMMARY": summary_path, "MODE": mode}
@@ -76,6 +86,7 @@ class SummaryTests(unittest.TestCase):
         return result, summary
 
     def test_audit_and_advanced_tolerate_check_failures(self):
+        """Report but tolerate failed checks in non-restrict modes."""
         results = {
             "configuration": {"result": "success"},
             "quality": {
@@ -91,6 +102,7 @@ class SummaryTests(unittest.TestCase):
                 self.assertIn("**1 failed:** quality/lint", summary)
 
     def test_restrict_fails_and_reports_skipped_checks(self):
+        """Fail in restrict mode and retain skipped results in Markdown."""
         results = {
             "configuration": {"result": "success"},
             "quality": {
@@ -105,6 +117,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("**failure**", summary)
 
     def test_failed_group_without_check_outputs_is_reported(self):
+        """Report a group-level failure if it has no check outputs."""
         results = {
             "configuration": {"result": "success"},
             "security": {"result": "failure", "outputs": {}},
@@ -114,6 +127,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("| security | (workflow) |", summary)
 
     def test_invalid_configuration_fails_before_checks(self):
+        """Fail summary generation when configuration is invalid."""
         results = {
             "configuration": {"result": "failure"},
             "quality": {"result": "skipped", "outputs": {}},
@@ -123,6 +137,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("Invalid configuration", summary)
 
     def test_missing_or_malformed_results_fail(self):
+        """Reject absent and malformed serialized workflow results."""
         result, _ = self.run_summary(None, "audit")
         self.assertNotEqual(result.returncode, 0)
 
@@ -140,7 +155,10 @@ class SummaryTests(unittest.TestCase):
 
 
 class CodeQLResultsTests(unittest.TestCase):
+    """Verify per-language CodeQL results and failure handling."""
+
     def run_converter(self, languages, results):
+        """Convert fabricated language results and capture the summary."""
         with tempfile.TemporaryDirectory() as directory:
             summary_path = Path(directory) / "summary.md"
             result = run_script(
@@ -155,6 +173,7 @@ class CodeQLResultsTests(unittest.TestCase):
         return result, summary
 
     def test_all_languages_must_succeed(self):
+        """Succeed when every requested CodeQL language succeeds."""
         result, summary = self.run_converter(
             ["python", "go"], {"python": "success", "go": "success"}
         )
@@ -163,6 +182,7 @@ class CodeQLResultsTests(unittest.TestCase):
         self.assertIn("| go | success |", summary)
 
     def test_missing_or_failed_language_fails(self):
+        """Fail if a CodeQL language fails or has no result."""
         for results in ({"python": "success"}, {"python": "failure", "go": "success"}):
             with self.subTest(results=results):
                 result, summary = self.run_converter(["python", "go"], results)
@@ -171,6 +191,7 @@ class CodeQLResultsTests(unittest.TestCase):
                 self.assertIn("| go |", summary)
 
     def test_empty_or_malformed_data_fails(self):
+        """Reject empty language selections and malformed JSON."""
         for languages in ([], "not-json"):
             with self.subTest(languages=languages):
                 result, _ = self.run_converter(languages, {})
@@ -190,7 +211,10 @@ class CodeQLResultsTests(unittest.TestCase):
 
 
 class RenovateReportTests(unittest.TestCase):
+    """Verify dependency update and lookup-error reporting."""
+
     def run_report(self, lines):
+        """Run renovate-report.py with a temporary JSONL report."""
         with tempfile.TemporaryDirectory() as directory:
             report_path = Path(directory) / "renovate.json"
             summary_path = Path(directory) / "summary.md"
@@ -208,6 +232,7 @@ class RenovateReportTests(unittest.TestCase):
         return result, summary
 
     def test_updates_are_summarized_and_fail_the_check(self):
+        """List available package updates and return a failing status."""
         record = {
             "msg": "packageFiles with updates",
             "config": {
@@ -230,6 +255,7 @@ class RenovateReportTests(unittest.TestCase):
         self.assertIn("package.json: sample 1.0.0 -> 1.1.0", summary)
 
     def test_no_updates_passes_and_lookup_errors_fail(self):
+        """Pass clean lookups and fail when a lookup has errors."""
         empty = {"msg": "packageFiles with updates", "config": {}}
         result, summary = self.run_report(json.dumps(empty) + "\n")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -241,6 +267,7 @@ class RenovateReportTests(unittest.TestCase):
         self.assertIn("lookup failed", summary)
 
     def test_missing_and_malformed_reports_fail(self):
+        """Fail when the report is missing or contains malformed JSON."""
         for lines in (None, "not-json\n"):
             with self.subTest(lines=lines):
                 result, _ = self.run_report(lines)
