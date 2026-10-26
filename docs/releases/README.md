@@ -6,6 +6,7 @@ body of its GitHub release page.
 | Version             | Date       | Summary                                                                              |
 | ------------------- | ---------- | ------------------------------------------------------------------------------------ |
 | [v0.5.0](v0.5.0.md) | 2026-10-24 | First release: configurable all-in-one checks in grouped workflows backed by scripts |
+| [v0.6.0](v0.6.0.md) | 2026-10-26 | Adds Node.js, Go, .NET, TFLint, multi-root Terraform, and multi-language CodeQL |
 
 ## Versioning
 

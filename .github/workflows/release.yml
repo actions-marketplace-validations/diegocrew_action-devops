@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v*"
   workflow_dispatch: # checkov:skip=CKV_GHA_7: republishes notes for an existing tag; nothing is built
     inputs:
       tag:
