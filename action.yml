@@ -1,0 +1,482 @@
+name: All-in-one DevOps and security checks
+description: Run quality, build, IaC, security, and dependency checks in one job with an audit, restrict, or advanced policy.
+author: diegocrew
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  mode:
+    description: "audit (report), restrict (fail), or advanced (report and attempt dependency PRs)"
+    default: audit
+  checkout:
+    description: Check out the calling repository first; set false if the job already checked it out with full history
+    default: "true"
+  # Quality
+  lint:
+    description: Run Super-Linter on the repository
+    default: "true"
+  # Build and test
+  python:
+    description: Install Python requirements and run tests
+    default: "false"
+  docker:
+    description: Build a Docker image without pushing it
+    default: "false"
+  node:
+    description: Set up Node.js and run a build/test command
+    default: "false"
+  go:
+    description: Set up Go and run a build/test command
+    default: "false"
+  dotnet:
+    description: Set up .NET and run a build/test command
+    default: "false"
+  # Infrastructure as code
+  terraform:
+    description: Check formatting and validate Terraform without a backend
+    default: "false"
+  tflint:
+    description: Lint Terraform root modules with TFLint
+    default: "false"
+  bicep:
+    description: Compile and validate Bicep templates without deploying
+    default: "false"
+  cloudformation:
+    description: Lint CloudFormation templates
+    default: "false"
+  # Security
+  trivy:
+    description: Scan vulnerabilities, secrets, and infrastructure misconfiguration
+    default: "true"
+  iac-security:
+    description: Run Checkov security and best-practice checks on IaC
+    default: "true"
+  codeql:
+    description: Opt in to GitHub CodeQL analysis and code-scanning uploads
+    default: "false"
+  dependabot:
+    description: Check existing open high and critical GitHub Dependabot alerts
+    default: "false"
+  dependency-review:
+    description: Review newly introduced vulnerable dependencies on pull requests
+    default: "false"
+  secret-scanning:
+    description: Check existing open GitHub secret-scanning alerts
+    default: "false"
+  # Dependencies
+  versions:
+    description: Check dependency versions, including Actions and Terraform providers
+    default: "true"
+  # Check settings
+  python-version:
+    description: Python interpreter version
+    default: "3.12"
+  python-requirements:
+    description: Optional requirements file; an empty value skips installation
+    default: ""
+  python-command:
+    description: Trusted shell command supplied by the calling workflow
+    default: python -m unittest discover -v
+  docker-context:
+    description: Docker build context
+    default: "."
+  dockerfile:
+    description: Dockerfile path relative to the repository root
+    default: Dockerfile
+  node-version:
+    description: Node.js version
+    default: "24"
+  node-command:
+    description: Trusted shell command supplied by the calling workflow
+    default: npm ci && npm test
+  go-version:
+    description: Go version; empty reads it from go.mod
+    default: ""
+  go-command:
+    description: Trusted shell command supplied by the calling workflow
+    default: go vet ./... && go test ./...
+  dotnet-version:
+    description: .NET SDK version
+    default: 10.0.x
+  dotnet-command:
+    description: Trusted shell command supplied by the calling workflow
+    default: dotnet test
+  terraform-directory:
+    description: Terraform root modules to check, comma- or newline-separated
+    default: "."
+  terraform-version:
+    description: Terraform version
+    default: latest
+  tflint-version:
+    description: TFLint version
+    default: v0.65.0
+  bicep-directory:
+    description: Directory containing Bicep templates
+    default: bicep
+  cloudformation-directory:
+    description: Directory containing CloudFormation templates
+    default: cloudformation
+  codeql-language:
+    description: CodeQL languages, comma- or newline-separated; do not mix compiled and interpreted languages in one call
+    default: javascript-typescript
+  severity:
+    description: Comma-separated Trivy severity levels that count as findings
+    default: HIGH,CRITICAL
+  github-security-token:
+    description: Optional read-only token for enabled Dependabot and secret-scanning alert APIs
+    default: ""
+  renovate-token:
+    description: Optional bot PAT or GitHub App token for advanced-mode dependency PRs
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Validate mode
+      id: validate
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/validate-config.sh"'
+
+    - name: Check out repository
+      if: inputs.checkout == 'true'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    # Quality
+    - name: Lint
+      id: lint
+      if: inputs.lint == 'true'
+      continue-on-error: true
+      uses: super-linter/super-linter@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
+      env:
+        VALIDATE_ALL_CODEBASE: true
+        ENABLE_GITHUB_ACTIONS_GROUP_TITLE: true
+        MULTI_STATUS: false
+        ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
+        FAIL_ON_CONFLICTING_TOOLS_ENABLED: true
+        VALIDATE_CSS: false
+        VALIDATE_CSS_PRETTIER: false
+        VALIDATE_GRAPHQL_PRETTIER: false
+        VALIDATE_HTML_PRETTIER: false
+        VALIDATE_JAVASCRIPT_ES: false
+        VALIDATE_JAVASCRIPT_PRETTIER: false
+        VALIDATE_JSON: false
+        VALIDATE_JSON_PRETTIER: false
+        VALIDATE_JSONC: false
+        VALIDATE_JSONC_PRETTIER: false
+        VALIDATE_JSX: false
+        VALIDATE_JSX_PRETTIER: false
+        VALIDATE_PYTHON_BLACK: false
+        VALIDATE_TSX: false
+        VALIDATE_TYPESCRIPT_ES: false
+        VALIDATE_TYPESCRIPT_PRETTIER: false
+        VALIDATE_VUE: false
+        VALIDATE_VUE_PRETTIER: false
+
+    # Build and test
+    - name: Set up Python
+      id: python-setup
+      if: inputs.python == 'true'
+      continue-on-error: true
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install requirements and run Python tests
+      id: python
+      if: inputs.python == 'true' && steps.python-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        REQUIREMENTS: ${{ inputs.python-requirements }}
+        TEST_COMMAND: ${{ inputs.python-command }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/python-tests.sh"'
+
+    - name: Build Docker image
+      id: docker
+      if: inputs.docker == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        CONTEXT: ${{ inputs.docker-context }}
+        DOCKERFILE: ${{ inputs.dockerfile }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/docker-build.sh"'
+
+    - name: Set up Node.js
+      id: node-setup
+      if: inputs.node == 'true'
+      continue-on-error: true
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+    - name: Node.js build and test
+      id: node
+      if: inputs.node == 'true' && steps.node-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.node-command }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/run-command.sh"'
+
+    - name: Set up Go
+      id: go-setup
+      if: inputs.go == 'true'
+      continue-on-error: true
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ inputs.go-version }}
+        go-version-file: ${{ inputs.go-version == '' && 'go.mod' || '' }}
+        cache: false
+    - name: Go build and test
+      id: go
+      if: inputs.go == 'true' && steps.go-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.go-command }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/run-command.sh"'
+
+    - name: Set up .NET
+      id: dotnet-setup
+      if: inputs.dotnet == 'true'
+      continue-on-error: true
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+    - name: .NET build and test
+      id: dotnet
+      if: inputs.dotnet == 'true' && steps.dotnet-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+        DOTNET_NOLOGO: "1"
+        COMMAND: ${{ inputs.dotnet-command }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/run-command.sh"'
+
+    # Infrastructure as code
+    - name: Set up Terraform
+      id: terraform-setup
+      if: inputs.terraform == 'true'
+      continue-on-error: true
+      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+    - name: Format and validate Terraform root modules
+      id: terraform
+      if: inputs.terraform == 'true' && steps.terraform-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        TF_DIRECTORY: ${{ inputs.terraform-directory }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/terraform-validate.sh"'
+
+    - name: Set up TFLint
+      id: tflint-setup
+      if: inputs.tflint == 'true'
+      continue-on-error: true
+      uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+      with:
+        tflint_version: ${{ inputs.tflint-version }}
+        tflint_wrapper: false
+    # The token only raises API rate limits for plugin downloads; linting does not receive it.
+    - name: Install TFLint plugins
+      id: tflint-init
+      if: inputs.tflint == 'true' && steps.tflint-setup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        TF_DIRECTORY: ${{ inputs.terraform-directory }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/tflint.sh" init'
+    - name: Lint Terraform root modules
+      id: tflint
+      if: inputs.tflint == 'true' && steps.tflint-init.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        TF_DIRECTORY: ${{ inputs.terraform-directory }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/tflint.sh" lint'
+
+    - name: Compile Bicep templates
+      id: bicep
+      if: inputs.bicep == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        BICEP_DIRECTORY: ${{ inputs.bicep-directory }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/bicep-build.sh"'
+
+    - name: Lint CloudFormation templates
+      id: cloudformation
+      if: inputs.cloudformation == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/cloudformation-lint.sh"'
+
+    # Security
+    - name: Scan repository with Trivy
+      id: trivy
+      if: inputs.trivy == 'true'
+      continue-on-error: true
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        scan-type: fs
+        scan-ref: .
+        scanners: vuln,secret,misconfig
+        severity: ${{ inputs.severity }}
+        exit-code: "1"
+        format: table
+
+    - name: Scan infrastructure as code with Checkov
+      id: iac-security
+      if: inputs.iac-security == 'true'
+      continue-on-error: true
+      shell: bash
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/checkov-scan.sh"'
+
+    - name: Validate CodeQL languages
+      id: codeql-languages
+      if: inputs.codeql == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        CODEQL_LANGUAGE: ${{ inputs.codeql-language }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/codeql-language.sh"'
+    - name: Check CodeQL build mode
+      id: codeql-mode
+      if: inputs.codeql == 'true' && steps.codeql-languages.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        BUILD_MODE: ${{ steps.codeql-languages.outputs.build-mode }}
+      run: |
+        if [[ "$BUILD_MODE" == mixed ]]; then
+          echo "::error::Do not mix compiled and interpreted codeql-language values in one action call; use separate steps or the reusable workflow"
+          exit 1
+        fi
+    - name: Initialize CodeQL
+      id: codeql-init
+      if: inputs.codeql == 'true' && steps.codeql-mode.outcome == 'success'
+      continue-on-error: true
+      uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+      with:
+        languages: ${{ join(fromJSON(steps.codeql-languages.outputs.languages), ',') }}
+        queries: security-extended
+        build-mode: ${{ steps.codeql-languages.outputs.build-mode }}
+    - name: Build for CodeQL
+      id: codeql-autobuild
+      if: >-
+        inputs.codeql == 'true' && steps.codeql-init.outcome == 'success' &&
+        steps.codeql-languages.outputs.build-mode == 'autobuild'
+      continue-on-error: true
+      uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+    - name: Analyze with CodeQL
+      id: codeql-analyze
+      if: >-
+        inputs.codeql == 'true' && steps.codeql-init.outcome == 'success' &&
+        steps.codeql-autobuild.outcome != 'failure'
+      continue-on-error: true
+      uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+
+    - name: Check open Dependabot alerts
+      id: dependabot
+      if: inputs.dependabot == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-security-token }}
+        GH_HOST: ${{ github.server_url }}
+        REPOSITORY: ${{ github.repository }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/github-alerts.sh" dependabot'
+
+    - name: Review dependency changes
+      id: dependency-review
+      if: inputs.dependency-review == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
+      uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+      with:
+        fail-on-severity: high
+        comment-summary-in-pr: never
+
+    - name: Check open secret-scanning alerts
+      id: secret-scanning
+      if: inputs.secret-scanning == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-security-token }}
+        GH_HOST: ${{ github.server_url }}
+        REPOSITORY: ${{ github.repository }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/github-alerts.sh" secret-scanning'
+
+    # Dependencies
+    - name: Look up dependency updates
+      id: versions-lookup
+      if: inputs.versions == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GITHUB_COM_TOKEN: ${{ github.token }}
+      run: '"$GITHUB_ACTION_PATH/.github/scripts/renovate-lookup.sh"'
+    - name: Report outdated dependencies
+      id: versions
+      if: inputs.versions == 'true' && steps.versions-lookup.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        REPORT: ${{ runner.temp }}/action-devops-renovate.json
+      run: python3 "$GITHUB_ACTION_PATH/.github/scripts/renovate-report.py"
+
+    - name: Check bot credentials
+      id: fixes-credentials
+      if: >-
+        inputs.mode == 'advanced' && inputs.versions == 'true' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+        contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
+      continue-on-error: true
+      shell: bash
+      env:
+        BOT_TOKEN: ${{ inputs.renovate-token }}
+      run: |
+        if [[ -z "$BOT_TOKEN" ]]; then
+          echo "::error::Pass renovate-token to enable dependency fix PRs"
+          exit 1
+        fi
+    - name: Attempt dependency fix PRs
+      id: fixes
+      if: steps.fixes-credentials.outcome == 'success'
+      continue-on-error: true
+      uses: renovatebot/github-action@2804199d260ad00c1fae0e9e842888369391c776 # v46.3.10
+      with:
+        token: ${{ inputs.renovate-token }}
+        renovate-version: 44.182.2
+      env:
+        RENOVATE_REPOSITORIES: ${{ github.repository }}
+        RENOVATE_ONBOARDING: "false"
+        RENOVATE_REQUIRE_CONFIG: optional
+        RENOVATE_AUTOMERGE: "false"
+        RENOVATE_FORCE: '{"automerge": false, "platformAutomerge": false}'
+        RENOVATE_ALLOW_SCRIPTS: "false"
+        RENOVATE_IGNORE_SCRIPTS: "true"
+        RENOVATE_ALLOWED_COMMANDS: "[]"
+        RENOVATE_PR_HOURLY_LIMIT: "2"
+
+    - name: Summarize results and enforce policy
+      if: always() && steps.validate.outcome == 'success'
+      shell: bash
+      env:
+        STEPS: ${{ toJSON(steps) }}
+        MODE: ${{ inputs.mode }}
+      run: |
+        RESULTS="$(python3 "$GITHUB_ACTION_PATH/.github/scripts/action-results.py")"
+        export RESULTS
+        python3 "$GITHUB_ACTION_PATH/.github/scripts/summarize.py"

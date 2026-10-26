@@ -21,3 +21,19 @@ jobs:
       # Audit: scanners and version lookups report without blocking merges.
       # The summary check still fails on invalid configuration or broken wiring.
       mode: audit
+
+  action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Tests the root action from this checkout, as callers would use it.
+      - uses: ./ # zizmor: ignore[self-repository]
+        with:
+          mode: audit
+          checkout: "false"

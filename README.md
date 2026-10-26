@@ -11,8 +11,9 @@ Reusable, parallel DevOps and security checks, in three layers:
 
 Updating a check means editing its script or its group file, never the
 orchestrator.
-Call it at **job level**, not as a step: a composite action cannot create
-parallel jobs.
+
+The same checks are also available as a composite action in `action.yml`, for
+callers who prefer step-level `uses:` (see [Use as an action](#use-as-an-action)).
 
 | Workflow           | Checks                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------- |
@@ -32,6 +33,7 @@ called directly with the same inputs.
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | `validate-config.sh`                                                             | `allinone.yml` configuration                                     |
 | `summarize.py`                                                                   | `allinone.yml` summary                                           |
+| `action-results.py`                                                              | `action.yml` summary                                             |
 | `python-tests.sh`, `docker-build.sh`, `run-command.sh`                           | `build-test.yml`                                                 |
 | `terraform-validate.sh`, `tflint.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml`                                                        |
 | `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml`                                                   |
@@ -83,7 +85,41 @@ merge revision), not this repository.
   neither is available on GitHub Enterprise Server.
 - **GitHub-hosted Ubuntu runners.** Jobs use `ubuntu-latest`. `$/` references need
   runner 2.336.0 or newer, which hosted runners already have.
-- **This repository must stay public**, because script checkouts use the caller's
+- **This repository must stay public**, because script che
+
+### Use as an action
+
+Call the root action as a step. It checks out the calling repository (pass
+`checkout: false` if the job already did, with `fetch-depth: 0`) and accepts the
+same inputs as `allinone.yml`, with secrets passed as inputs:
+
+```yaml
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: diegocrew/action-devops@<release tag or full commit SHA>
+        with:
+          mode: audit
+          python: true
+          python-command: python -m pytest
+```
+
+Differences from the reusable workflow:
+
+- Checks run **one after another in the calling job**, not as parallel jobs, so
+  a full run takes longer.
+- All checks share the job's permissions and tools. Grant only what enabled
+  checks need (for example `security-events: write` only with `codeql`), and do
+  not pass `github-security-token` or `renovate-token` to a job that also runs
+  repository code you do not trust.
+- `codeql-language` cannot mix compiled (`c-cpp`, `go`, `java-kotlin`, `csharp`)
+  and interpreted (`javascript-typescript`, `python`, `ruby`) languages in one
+  call; use two steps or the reusable workflow.
+- Modes behave the same: each check tolerates failure, and the final summary
+  step fails the job only in `restrict` mode or on invalid configuration.ckouts use the caller's
   token (see [Security boundaries](#security-boundaries)).
 
 ## Checks
