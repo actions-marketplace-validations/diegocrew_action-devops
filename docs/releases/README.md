@@ -7,17 +7,20 @@ body of its GitHub release page.
 | ------------------- | ---------- | ------------------------------------------------------------------------------------ |
 | [v0.5.0](v0.5.0.md) | 2026-10-24 | First release: configurable all-in-one checks in grouped workflows backed by scripts |
 | [v0.6.0](v0.6.0.md) | 2026-10-26 | Adds Node.js, Go, .NET, TFLint, multi-root Terraform, and multi-language CodeQL      |
+| [v1.0.0](v1.0.0.md) | 2026-10-26 | Step-level action entry point alongside the reusable workflow                        |
 
 ## Versioning
 
-Versions follow [Semantic Versioning](https://semver.org/). Before `v1.0.0`, a
-minor version (`v0.6.0`) may change inputs or behavior; a patch version
-(`v0.5.1`) only fixes bugs or updates pinned tools without changing inputs.
+Versions follow [Semantic Versioning](https://semver.org/). From `v1.0.0`, a
+major version (`v2.0.0`) may remove or change inputs or behavior; a minor
+version (`v1.1.0`) adds checks or inputs compatibly; a patch version (`v1.0.1`)
+only fixes bugs or updates pinned tools.
 
 Pin callers to a release tag, or better, to the tag's full commit SHA:
 
 ```yaml
-uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
+uses: diegocrew/action-devops@v1.0.0
+uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
 ```
 
 ## Publishing a release

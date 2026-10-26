@@ -1,6 +1,17 @@
 # action-devops
 
-Reusable, parallel DevOps and security checks, in three layers:
+DevOps and security checks for GitHub Actions, available two ways:
+
+- **Action** (`action.yml`): call it as a step, like any other action. Checks
+  run one after another in your job.
+- **Reusable workflow** (`.github/workflows/allinone.yml`): call it as a job.
+  Checks run as parallel jobs, each with its own minimal permissions.
+
+Both take the same inputs, run the same checks and scripts, and share the same
+modes and summary. Choose the action for simplicity, or the reusable workflow
+for speed and per-check isolation.
+
+The reusable workflow has three layers:
 
 1. `.github/workflows/allinone.yml` is only configuration: it switches checks
    on or off and calls one reusable workflow per group.
@@ -9,11 +20,8 @@ Reusable, parallel DevOps and security checks, in three layers:
    only set up tools, pass inputs as environment variables, and call scripts
    or pinned actions.
 
-Updating a check means editing its script or its group file, never the
-orchestrator.
-
-The same checks are also available as a composite action in `action.yml`, for
-callers who prefer step-level `uses:` (see [Use as an action](#use-as-an-action)).
+Updating a check means editing its script, its group file, and the matching
+step in `action.yml`, never the orchestrator.
 
 | Workflow           | Checks                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------- |
@@ -49,6 +57,8 @@ environment variables and fail with a `::error::` annotation on bad input.
 
 ## Use from any repository
 
+### As an action
+
 ```yaml
 name: DevOps checks
 on:
@@ -62,50 +72,22 @@ permissions:
 
 jobs:
   checks:
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
-    with:
-      mode: audit
-      python: true
-      python-requirements: requirements-dev.txt
-      python-command: python -m pytest
-      docker: true
-      terraform: true
-      terraform-directory: infrastructure
-```
-
-Pin to a release tag, or to that tag's full commit SHA for production use; see
-[releases](docs/releases/README.md) for versions and changelogs. The workflow
-checks out the **calling repository** at the event revision (including the PR
-merge revision), not this repository.
-
-### Platform requirements
-
-- **github.com only.** The groups are called with `$/` self-repository references
-  and check out scripts using `job.workflow_repository` and `job.workflow_sha`;
-  neither is available on GitHub Enterprise Server.
-- **GitHub-hosted Ubuntu runners.** Jobs use `ubuntu-latest`. `$/` references need
-  runner 2.336.0 or newer, which hosted runners already have.
-- **This repository must stay public**, because script che
-
-### Use as an action
-
-Call the root action as a step. It checks out the calling repository (pass
-`checkout: false` if the job already did, with `fetch-depth: 0`) and accepts the
-same inputs as `allinone.yml`, with secrets passed as inputs:
-
-```yaml
-jobs:
-  checks:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - uses: diegocrew/action-devops@<release tag or full commit SHA>
+      - uses: diegocrew/action-devops@v1.0.0
         with:
           mode: audit
           python: true
+          python-requirements: requirements-dev.txt
           python-command: python -m pytest
+          docker: true
+          terraform: true
+          terraform-directory: infrastructure
 ```
+
+The action checks out the calling repository itself; set `checkout: false` if
+the job already did, with `fetch-depth: 0`. Tokens are passed as inputs
+(`github-security-token`, `renovate-token`) instead of secrets.
 
 Differences from the reusable workflow:
 
@@ -119,13 +101,39 @@ Differences from the reusable workflow:
   and interpreted (`javascript-typescript`, `python`, `ruby`) languages in one
   call; use two steps or the reusable workflow.
 - Modes behave the same: each check tolerates failure, and the final summary
-  step fails the job only in `restrict` mode or on invalid configuration.ckouts use the caller's
+  step fails the job only in `restrict` mode or on invalid configuration.
+
+### As a reusable workflow
+
+```yaml
+jobs:
+  checks:
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
+    with:
+      mode: audit
+      python: true
+      python-command: python -m pytest
+```
+
+Pin to a release tag, or to that tag's full commit SHA for production use; see
+[releases](docs/releases/README.md) for versions and changelogs. Both entry
+points check out the **calling repository** at the event revision (including the
+PR merge revision), not this repository.
+
+### Platform requirements
+
+- **github.com only.** The groups are called with `$/` self-repository references
+  and check out scripts using `job.workflow_repository` and `job.workflow_sha`;
+  neither is available on GitHub Enterprise Server.
+- **GitHub-hosted Ubuntu runners.** Jobs use `ubuntu-latest`. `$/` references need
+  runner 2.336.0 or newer, which hosted runners already have.
+- **This repository must stay public**, because script checkouts use the caller's
   token (see [Security boundaries](#security-boundaries)).
 
 ## Checks
 
-All enabled checks run independently in parallel after configuration validation:
-groups run in parallel, and so do the checks inside each group.
+In the reusable workflow, all enabled checks run independently in parallel after
+configuration validation. The action runs the same checks in sequence.
 
 | Input               | Default | Check                                                                                                                                  |
 | ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -232,11 +240,13 @@ jobs:
       actions: read # needed for private repositories
       contents: read
       security-events: write # upload to code scanning
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
     with:
       codeql: true
       codeql-language: python
 ```
+
+With the action, grant the same permissions to the job that runs it.
 
 Code scanning must be available for the repository (public, or GitHub Advanced
 Security / Code Security enabled). Compiled languages use autobuild; use a
@@ -266,12 +276,15 @@ and do not need this secret:
 ```yaml
 jobs:
   checks:
-    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v0.5.0
+    uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
     with:
       mode: advanced
     secrets:
       renovate-token: ${{ secrets.RENOVATE_TOKEN }}
 ```
+
+With the action, pass it as `renovate-token: ${{ secrets.RENOVATE_TOKEN }}`
+under `with:`.
 
 Use a GitHub App installation token or fine-grained PAT restricted to the calling
 repository, with contents and pull requests write access, issues write access
