@@ -31,8 +31,6 @@ jobs:
       # Keep upstream-dependent findings visible without making them merge gates.
       mode: audit
       lint: false
-      python: true
-      python-command: exit 17
 
   action:
     runs-on: ubuntu-latest

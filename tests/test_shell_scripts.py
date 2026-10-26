@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".github" / "scripts"
 BASH = shutil.which("bash")
@@ -18,7 +17,8 @@ class ShellScriptTests(unittest.TestCase):
     """Exercise Bash scripts with temporary fixtures and mocked tools."""
 
     def setUp(self):
-        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         for source in SCRIPTS.glob("*.sh"):
