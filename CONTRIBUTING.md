@@ -38,6 +38,7 @@ The `CI` workflow runs this repository's own checks on every pull request. Befor
 opening one, run:
 
 ```bash
+python3 -m unittest discover -s tests -v
 shellcheck -x .github/scripts/*.sh
 python3 -m py_compile .github/scripts/*.py
 actionlint -config-file .github/linters/actionlint.yml

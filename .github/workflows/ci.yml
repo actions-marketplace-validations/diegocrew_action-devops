@@ -18,9 +18,21 @@ jobs:
   checks:
     uses: $/.github/workflows/allinone.yml
     with:
-      # Audit: scanners and version lookups report without blocking merges.
-      # The summary check still fails on invalid configuration or broken wiring.
+      mode: restrict
+      trivy: false
+      iac-security: false
+      versions: false
+      python: true
+      python-command: python -m unittest discover -s tests -v
+
+  audit:
+    uses: $/.github/workflows/allinone.yml
+    with:
+      # Keep upstream-dependent findings visible without making them merge gates.
       mode: audit
+      lint: false
+      python: true
+      python-command: exit 17
 
   action:
     runs-on: ubuntu-latest
@@ -32,8 +44,46 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Run unit and fixture tests
+        run: python3 -m unittest discover -s tests -v
       # Tests the root action from this checkout, as callers would use it.
       - uses: ./
         with:
           mode: audit
           checkout: "false"
+      - name: Verify audit mode tolerates a controlled check failure
+        id: action-audit
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: audit
+          checkout: "false"
+          lint: "false"
+          python: "true"
+          python-command: exit 17
+          trivy: "false"
+          iac-security: "false"
+          versions: "false"
+      - name: Assert audit failure was tolerated
+        if: always()
+        env:
+          ACTION_OUTCOME: ${{ steps.action-audit.outcome }}
+        run: test "$ACTION_OUTCOME" = success
+      - name: Verify restrict mode rejects a controlled check failure
+        id: action-restrict
+        continue-on-error: true
+        uses: ./
+        with:
+          mode: restrict
+          checkout: "false"
+          lint: "false"
+          python: "true"
+          python-command: exit 17
+          trivy: "false"
+          iac-security: "false"
+          versions: "false"
+      - name: Assert restrict failure was propagated
+        if: always()
+        env:
+          ACTION_OUTCOME: ${{ steps.action-restrict.outcome }}
+        run: test "$ACTION_OUTCOME" = failure
