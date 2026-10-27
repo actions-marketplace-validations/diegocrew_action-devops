@@ -8,6 +8,7 @@ body of its GitHub release page.
 | [v0.5.0](v0.5.0.md) | 2026-10-24 | First release: configurable all-in-one checks in grouped workflows backed by scripts |
 | [v0.6.0](v0.6.0.md) | 2026-10-26 | Adds Node.js, Go, .NET, TFLint, multi-root Terraform, and multi-language CodeQL      |
 | [v1.0.0](v1.0.0.md) | 2026-10-26 | Step-level action entry point alongside the reusable workflow                        |
+| [v1.1.0](v1.1.0.md) | 2026-10-27 | Improved validation, IaC scan coverage, failure reporting, and CI regression tests     |
 
 ## Versioning
 
@@ -19,8 +20,8 @@ only fixes bugs or updates pinned tools.
 Pin callers to a release tag, or better, to the tag's full commit SHA:
 
 ```yaml
-uses: diegocrew/action-devops@v1.0.0
-uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.0.0
+uses: diegocrew/action-devops@v1.1.0
+uses: diegocrew/action-devops/.github/workflows/allinone.yml@v1.1.0
 ```
 
 ## Publishing a release
