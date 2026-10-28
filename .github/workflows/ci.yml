@@ -73,8 +73,8 @@ jobs:
           python-version: "3.12"
       - name: Run unit and fixture tests
         run: python -m unittest discover -s tests -v
-      # Tests the root action from this checkout, as callers would use it.
-      - uses: ./
+      # Test the workspace checkout, not a separately downloaded action.
+      - uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: restrict
           checkout: "false"
@@ -110,7 +110,7 @@ jobs:
         id: action-platform
         if: runner.os != 'Linux'
         continue-on-error: true
-        uses: ./
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: audit
           checkout: "false"
@@ -126,7 +126,7 @@ jobs:
       - name: Verify audit mode tolerates a controlled check failure
         id: action-audit
         continue-on-error: true
-        uses: ./
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: audit
           checkout: "false"
@@ -144,7 +144,7 @@ jobs:
       - name: Verify restrict mode rejects a controlled check failure
         id: action-restrict
         continue-on-error: true
-        uses: ./
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: restrict
           checkout: "false"

@@ -16,14 +16,7 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-roots=()
-while IFS= read -r root; do
-  roots+=("$root")
-done < <(split_list "${TF_DIRECTORY:-}")
-if [[ -z "${roots[*]-}" ]]; then
-  echo "::error::terraform-directory must name at least one root module"
-  exit 1
-fi
+load_terraform_roots || exit 1
 
 failed=()
 for root in "${roots[@]}"; do

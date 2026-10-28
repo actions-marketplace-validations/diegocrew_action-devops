@@ -16,3 +16,9 @@
   provisioned explicitly for reporting, CloudFormation, and Checkov.
 - Bicep uses the standalone CLI pinned to v0.48.1 rather than requiring Azure CLI.
 - Shell scripts are checked out with LF endings on every OS.
+
+## Fixed
+
+- CI lint regressions: shared Terraform root parsing avoids duplicate code,
+  Bash discovery is typed for missing executables, README tables are formatted,
+  and workspace-action lint exceptions no longer depend on changing line numbers.

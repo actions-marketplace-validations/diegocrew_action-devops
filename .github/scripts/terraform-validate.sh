@@ -9,14 +9,7 @@ export TF_IN_AUTOMATION=true TF_INPUT=false
 source "$(dirname -- "${BASH_SOURCE[0]}")/list.sh"
 # shellcheck source=SCRIPTDIR/runtime.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/runtime.sh"
-roots=()
-while IFS= read -r root; do
-  roots+=("$root")
-done < <(split_list "${TF_DIRECTORY:-}")
-if [[ -z "${roots[*]-}" ]]; then
-  echo "::error::terraform-directory must name at least one root module"
-  exit 1
-fi
+load_terraform_roots || exit 1
 
 failed=()
 for root in "${roots[@]}"; do

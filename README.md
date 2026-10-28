@@ -47,7 +47,7 @@ called directly with the same inputs.
 | `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml`                                                   |
 | `list.sh`                                                                        | Sourced by scripts that accept comma- or newline-separated lists |
 | `runtime.sh`                                                                     | Shared runner-path and Python virtualenv handling                |
-| `validate-platform.sh`                                                           | Rejects Linux-only checks on other composite-action runners     |
+| `validate-platform.sh`                                                           | Rejects Linux-only checks on other composite-action runners      |
 | `renovate-lookup.sh`, `renovate-report.py`                                       | `dependencies.yml`                                               |
 | `create-release.sh`                                                              | `release.yml`, which publishes releases of this repository       |
 
@@ -134,11 +134,11 @@ PR merge revision), not this repository.
 - **This repository must stay public**, because script checkouts use the caller's
   token (see [Security boundaries](#security-boundaries)).
 
-| Checks | Reusable workflow | Composite action |
-| --- | --- | --- |
-| Python, Node.js, Go, .NET, Terraform, TFLint, Bicep, CloudFormation, Checkov, CodeQL, alert APIs, dependency review | Selected `runner` | Calling runner |
-| Super-Linter, Docker builds, Trivy integration, Renovate lookups and fix PRs | Always Ubuntu | Linux only |
-| Configuration, language-matrix preparation, result aggregation | Always Ubuntu | Calling runner |
+| Checks                                                                                                              | Reusable workflow | Composite action |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------- |
+| Python, Node.js, Go, .NET, Terraform, TFLint, Bicep, CloudFormation, Checkov, CodeQL, alert APIs, dependency review | Selected `runner` | Calling runner   |
+| Super-Linter, Docker builds, Trivy integration, Renovate lookups and fix PRs                                        | Always Ubuntu     | Linux only       |
+| Configuration, language-matrix preparation, result aggregation                                                      | Always Ubuntu     | Calling runner   |
 
 Linux-only integrations stay on Ubuntu even when `runner` is `macos-latest` or
 `windows-latest`. Direct callers of `build-test.yml`, `iac.yml`, and `security.yml`

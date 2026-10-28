@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+BASH: str | None
 if os.name == "nt":
     BASH = str(Path(os.environ["ProgramFiles"]) / "Git" / "bin" / "bash.exe")
 elif sys.platform == "darwin":

@@ -1,6 +1,2 @@
-rules:
-  self-repository:
-    ignore:
-      - ci.yml:48
-      - ci.yml:55
-      - ci.yml:73
+# Workspace action smoke tests carry local, line-independent exceptions.
+rules: {}
