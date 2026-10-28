@@ -5,7 +5,7 @@ set -euo pipefail
 python3 -m venv "$RUNNER_TEMP/checkov"
 "$RUNNER_TEMP/checkov/bin/python" -m pip install --disable-pip-version-check checkov==3.3.30
 
-args=(--directory . --framework terraform,cloudformation,arm,bicep,github_actions --compact)
+args=(--directory . --framework "terraform,cloudformation,arm,bicep,github_actions" --compact)
 # Same config file Super-Linter reads, so existing skips keep working.
 if [[ -f .github/linters/.checkov.yaml ]]; then
   args+=(--config-file .github/linters/.checkov.yaml)
