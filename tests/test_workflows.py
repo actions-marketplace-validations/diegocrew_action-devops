@@ -105,6 +105,18 @@ class RunnerSelectionTests(unittest.TestCase):
             action,
         )
 
+    def test_controlled_findings_fixture_is_isolated_from_repository_scans(self):
+        """Only materialize intentionally insecure IaC in runner-temp."""
+        fixture = WORKFLOWS.parents[1] / "tests" / "fixtures" / "checkov"
+        self.assertTrue((fixture / "main.tf.fixture").is_file())
+        self.assertFalse((fixture / "main.tf").exists())
+        action_job = jobs("ci")["action"]
+        self.assertIn('mktemp -d "$RUNNER_TEMP/checkov-fixture.XXXXXX"', action_job)
+        self.assertIn(
+            'cp tests/fixtures/checkov/main.tf.fixture "$fixture/main.tf"', action_job
+        )
+        self.assertIn("trap 'rm -rf -- \"$fixture\"' EXIT", action_job)
+
 
 if __name__ == "__main__":
     unittest.main()

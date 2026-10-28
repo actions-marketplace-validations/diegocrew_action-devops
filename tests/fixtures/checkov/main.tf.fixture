@@ -1,4 +1,4 @@
-# Intentionally incomplete security configuration; scanned, never deployed.
+# Intentionally incomplete configuration; materialized only for scanner tests.
 terraform {
   required_version = ">= 1.0"
   required_providers {

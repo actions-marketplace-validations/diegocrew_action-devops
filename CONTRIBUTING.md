@@ -63,7 +63,8 @@ with `mode: audit`.
 CI runs the reusable workflow and composite action on `ubuntu-latest`,
 `macos-latest`, and `windows-latest`, including real Terraform, TFLint, Bicep,
 CloudFormation executions against fixtures in `tests/fixtures/iac`, and controlled
-Checkov findings in `tests/fixtures/checkov` (never deployed).
+Checkov findings from `tests/fixtures/checkov/main.tf.fixture`, materialized only
+in runner-temp during scanner tests (never deployed or scanned as repository IaC).
 It also verifies audit/restrict failure propagation and rejection of Linux-only
 checks in the composite action.
 

@@ -19,6 +19,9 @@
 
 ## Fixed
 
+- Isolated the intentionally insecure Checkov fixture from normal repository
+  security and dependency scans; scanner tests materialize it in runner-temp.
+
 - CI lint regressions: shared Terraform root parsing avoids duplicate code,
   Bash discovery is typed for missing executables, documentation tables are formatted,
   and workspace-action lint exceptions no longer depend on changing line numbers.

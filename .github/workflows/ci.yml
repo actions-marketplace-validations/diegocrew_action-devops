@@ -97,11 +97,14 @@ jobs:
           cloudformation: "true"
           cloudformation-directory: tests/fixtures/iac/cloudformation
       - name: Verify Checkov reports controlled findings
-        working-directory: tests/fixtures/checkov
         env:
           SCRIPTS: ${{ github.workspace }}/.github/scripts
         run: |
           source "$SCRIPTS/runtime.sh"
+          fixture="$(mktemp -d "$RUNNER_TEMP/checkov-fixture.XXXXXX")"
+          trap 'rm -rf -- "$fixture"' EXIT
+          cp tests/fixtures/checkov/main.tf.fixture "$fixture/main.tf"
+          cd "$fixture"
           status=0
           bash "$SCRIPTS/checkov-scan.sh" || status=$?
           test "$status" -eq 1
