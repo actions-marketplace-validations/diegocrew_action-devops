@@ -20,5 +20,5 @@
 ## Fixed
 
 - CI lint regressions: shared Terraform root parsing avoids duplicate code,
-  Bash discovery is typed for missing executables, README tables are formatted,
+  Bash discovery is typed for missing executables, documentation tables are formatted,
   and workspace-action lint exceptions no longer depend on changing line numbers.
