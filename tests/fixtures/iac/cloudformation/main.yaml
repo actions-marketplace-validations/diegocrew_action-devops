@@ -1,0 +1,5 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Cross-platform lint fixture; never deployed.
+Resources:
+  WaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle

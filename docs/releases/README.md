@@ -3,6 +3,8 @@
 Each release has its own notes file, `vMAJOR.MINOR.PATCH.md`, which is also the
 body of its GitHub release page.
 
+Pending changes are tracked in [Unreleased](unreleased.md).
+
 | Version             | Date       | Summary                                                                              |
 | ------------------- | ---------- | ------------------------------------------------------------------------------------ |
 | [v0.5.0](v0.5.0.md) | 2026-10-24 | First release: configurable all-in-one checks in grouped workflows backed by scripts |

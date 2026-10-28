@@ -140,6 +140,22 @@ runs:
         MODE: ${{ inputs.mode }}
       run: '"$GITHUB_ACTION_PATH/.github/scripts/validate-config.sh"'
 
+    - name: Set up internal Python tools
+      id: runtime-python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: "3.12"
+
+    - name: Validate runner compatibility
+      id: platform
+      shell: bash
+      env:
+        LINT: ${{ inputs.lint }}
+        DOCKER: ${{ inputs.docker }}
+        TRIVY: ${{ inputs.trivy }}
+        VERSIONS: ${{ inputs.versions }}
+      run: 'bash "$GITHUB_ACTION_PATH/.github/scripts/validate-platform.sh"'
+
     - name: Check out repository
       if: inputs.checkout == 'true'
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,7 +166,7 @@ runs:
     # Quality
     - name: Lint
       id: lint
-      if: inputs.lint == 'true'
+      if: inputs.lint == 'true' && runner.os == 'Linux'
       continue-on-error: true
       uses: super-linter/super-linter@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
       env:
@@ -201,7 +217,7 @@ runs:
 
     - name: Build Docker image
       id: docker
-      if: inputs.docker == 'true'
+      if: inputs.docker == 'true' && runner.os == 'Linux'
       continue-on-error: true
       shell: bash
       env:
@@ -323,12 +339,13 @@ runs:
       shell: bash
       env:
         CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}
+        PYTHON_EXECUTABLE: ${{ steps.runtime-python.outputs.python-path }}
       run: '"$GITHUB_ACTION_PATH/.github/scripts/cloudformation-lint.sh"'
 
     # Security
     - name: Scan repository with Trivy
       id: trivy
-      if: inputs.trivy == 'true'
+      if: inputs.trivy == 'true' && runner.os == 'Linux'
       continue-on-error: true
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
@@ -345,6 +362,8 @@ runs:
       if: inputs.iac-security == 'true'
       continue-on-error: true
       shell: bash
+      env:
+        PYTHON_EXECUTABLE: ${{ steps.runtime-python.outputs.python-path }}
       run: '"$GITHUB_ACTION_PATH/.github/scripts/checkov-scan.sh"'
 
     - name: Validate CodeQL languages
@@ -425,7 +444,7 @@ runs:
     # Dependencies
     - name: Look up dependency updates
       id: versions-lookup
-      if: inputs.versions == 'true'
+      if: inputs.versions == 'true' && runner.os == 'Linux'
       continue-on-error: true
       shell: bash
       env:
@@ -438,12 +457,13 @@ runs:
       shell: bash
       env:
         REPORT: ${{ runner.temp }}/action-devops-renovate.json
-      run: python3 "$GITHUB_ACTION_PATH/.github/scripts/renovate-report.py"
+        PYTHON_EXECUTABLE: ${{ steps.runtime-python.outputs.python-path }}
+      run: '"$PYTHON_EXECUTABLE" "$GITHUB_ACTION_PATH/.github/scripts/renovate-report.py"'
 
     - name: Check bot credentials
       id: fixes-credentials
       if: >-
-        inputs.mode == 'advanced' && inputs.versions == 'true' &&
+        runner.os == 'Linux' && inputs.mode == 'advanced' && inputs.versions == 'true' &&
         github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
         contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
       continue-on-error: true
@@ -475,12 +495,13 @@ runs:
         RENOVATE_PR_HOURLY_LIMIT: "2"
 
     - name: Summarize results and enforce policy
-      if: always() && steps.validate.outcome == 'success'
+      if: always() && steps.validate.outcome == 'success' && steps.runtime-python.outcome == 'success'
       shell: bash
       env:
         STEPS: ${{ toJSON(steps) }}
         MODE: ${{ inputs.mode }}
+        PYTHON_EXECUTABLE: ${{ steps.runtime-python.outputs.python-path }}
       run: |
-        RESULTS="$(python3 "$GITHUB_ACTION_PATH/.github/scripts/action-results.py")"
+        RESULTS="$("$PYTHON_EXECUTABLE" "$GITHUB_ACTION_PATH/.github/scripts/action-results.py")"
         export RESULTS
-        python3 "$GITHUB_ACTION_PATH/.github/scripts/summarize.py"
+        "$PYTHON_EXECUTABLE" "$GITHUB_ACTION_PATH/.github/scripts/summarize.py"

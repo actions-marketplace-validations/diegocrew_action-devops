@@ -18,10 +18,10 @@ while IFS= read -r language; do
       exit 1
       ;;
   esac
-  [[ " ${languages[*]} " == *" $language "* ]] || languages+=("$language")
+  [[ " ${languages[*]-} " == *" $language "* ]] || languages+=("$language")
 done < <(split_list "${CODEQL_LANGUAGE:-}")
 
-if ((${#languages[@]} == 0)); then
+if [[ -z "${languages[*]-}" ]]; then
   echo "::error::codeql-language must name at least one supported language; see README"
   exit 1
 fi

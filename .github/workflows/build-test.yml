@@ -3,6 +3,10 @@ name: Build and test
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner label for portable checks; Docker always uses Ubuntu
+        type: string
+        default: ubuntu-latest
       mode:
         description: "audit or advanced (report) or restrict (fail)"
         type: string
@@ -101,7 +105,7 @@ jobs:
   python:
     needs: mode
     if: inputs.python
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -168,7 +172,7 @@ jobs:
   node:
     needs: mode
     if: inputs.node
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -203,7 +207,7 @@ jobs:
   go:
     needs: mode
     if: inputs.go
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -239,7 +243,7 @@ jobs:
   dotnet:
     needs: mode
     if: inputs.dotnet
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:

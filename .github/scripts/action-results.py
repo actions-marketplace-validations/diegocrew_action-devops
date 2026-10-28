@@ -55,7 +55,12 @@ def outcome(step_ids, steps):
 
 
 steps_context = json.loads(os.environ["STEPS"])
-results: dict[str, dict] = {"configuration": {"result": "success"}}
+results: dict[str, dict] = {
+    "configuration": {
+        "result": outcome(["validate", "platform", "runtime-python"], steps_context)
+        or "success"
+    }
+}
 for group, checks in CHECKS.items():
     results[group] = {
         "result": "success",

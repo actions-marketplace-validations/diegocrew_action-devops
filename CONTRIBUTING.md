@@ -58,6 +58,23 @@ input must be declared in `allinone.yml` with the same default and forwarded.
 Then run the workflows from a test repository that calls your branch, starting
 with `mode: audit`.
 
+## Cross-platform checks
+
+CI runs the reusable workflow and composite action on `ubuntu-latest`,
+`macos-latest`, and `windows-latest`, including real Terraform, TFLint, Bicep,
+CloudFormation executions against fixtures in `tests/fixtures/iac`, and controlled
+Checkov findings in `tests/fixtures/checkov` (never deployed).
+It also verifies audit/restrict failure propagation and rejection of Linux-only
+checks in the composite action.
+
+Keep portable scripts compatible with macOS's system Bash 3.2 and Windows Git
+Bash. Use `runtime.sh` for virtualenv paths (`bin` versus `Scripts`) and native
+Windows runner-temp conversion. `.gitattributes` enforces LF shell scripts.
+The portable tests in `tests/test_platforms.py` must run on Windows; the older
+POSIX executable-stub fixtures are intentionally skipped there. New portable jobs
+must use and forward `runner`, while Linux-only integrations and control jobs stay
+on Ubuntu.
+
 ## Releases
 
 Maintainers publish releases by following
