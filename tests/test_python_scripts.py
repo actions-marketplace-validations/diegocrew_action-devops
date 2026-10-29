@@ -34,6 +34,18 @@ class ActionResultsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
+    def test_platform_and_runtime_failures_are_configuration_errors(self):
+        """Unsupported runners and missing Python must never look successful."""
+        for step in ("platform", "runtime-python"):
+            with self.subTest(step=step):
+                results = self.run_converter({step: {"outcome": "failure"}})
+                self.assertEqual(results["configuration"]["result"], "failure")
+
+    def test_internal_python_setup_does_not_enable_python_check(self):
+        """Provisioning reporting tools does not count as running Python tests."""
+        results = self.run_converter({"runtime-python": {"outcome": "success"}})
+        self.assertEqual(results["build-test"]["outputs"]["python"], "")
+
     def test_maps_failed_setup_and_skipped_check(self):
         """Map failed setup and skipped steps to stable results."""
         results = self.run_converter(

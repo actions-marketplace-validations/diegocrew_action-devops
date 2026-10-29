@@ -3,13 +3,14 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".github" / "scripts"
-BASH = shutil.which("bash")
+BASH = "/bin/bash" if sys.platform == "darwin" else shutil.which("bash")
 
 
 @unittest.skipUnless(os.name == "posix" and BASH, "requires a POSIX Bash runner")
@@ -274,15 +275,62 @@ class ShellScriptTests(unittest.TestCase):
             encoding="utf-8",
         )
         self._executable(
-            "python3",
+            "python",
             "#!/usr/bin/env bash\n"
             'if [[ "$1 $2" == "-m venv" ]]; then\n'
             '  mkdir -p "$3/bin"\n'
-            "  printf '#!/usr/bin/env bash\\n' >\"$3/bin/python\"\n"
+            "  printf '%s\\n' '#!/usr/bin/env bash' "
+            '\'if [[ "$1" == */checkov ]]; then bash "$@"; fi\' >"$3/bin/python"\n'
             f'  cp "{checkov}" "$3/bin/checkov"\n'
             '  chmod +x "$3/bin/python" "$3/bin/checkov"\n'
             "fi\n",
         )
+
+    def test_iac_scripts_reject_empty_inputs(self):
+        """Reject empty root lists and empty template directories."""
+        for script, values in (
+            ("terraform-validate.sh", {"TF_DIRECTORY": " , \n "}),
+            ("tflint.sh", {"TF_DIRECTORY": " , \n "}),
+            ("bicep-build.sh", {"BICEP_DIRECTORY": str(self.root)}),
+            ("cloudformation-lint.sh", {"CFN_DIRECTORY": str(self.root)}),
+        ):
+            with self.subTest(script=script):
+                args = ("lint",) if script == "tflint.sh" else ()
+                result = self._run_script(script, *args, **values)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("::error::", result.stdout)
+
+    def test_bicep_compiles_templates_and_parameters_with_spaces(self):
+        """Use standalone Bicep without depending on Azure CLI."""
+        directory = self.root / "bicep space"
+        directory.mkdir()
+        (directory / "main template.bicep").touch()
+        (directory / "main parameters.bicepparam").touch()
+        self._executable(
+            "curl",
+            "#!/usr/bin/env bash\n"
+            'while [[ "$1" != --output ]]; do shift; done\n'
+            'printf \'#!/usr/bin/env bash\\nprintf "%%s\\\\n" "$*" >>"$TOOL_LOG"\\n\' >"$2"\n',
+        )
+        result = self._run_script(
+            "bicep-build.sh",
+            BICEP_DIRECTORY=directory,
+            RUNNER_OS="Linux",
+            RUNNER_ARCH="X64",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text(encoding="utf-8")
+        self.assertIn(f"build {directory}/main template.bicep", log)
+        self.assertIn(f"build-params {directory}/main parameters.bicepparam", log)
+
+        (directory / "main parameters.bicepparam").unlink()
+        result = self._run_script(
+            "bicep-build.sh",
+            BICEP_DIRECTORY=directory,
+            RUNNER_OS="Linux",
+            RUNNER_ARCH="X64",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_checkov_reports_when_nothing_is_scanned(self):
         """Explain an empty Checkov run instead of printing nothing."""
@@ -292,6 +340,13 @@ class ShellScriptTests(unittest.TestCase):
         self.assertIn("::notice::Checkov found no", result.stdout)
         self.assertIn("no Terraform", self.summary.read_text(encoding="utf-8"))
         self.assertIn("github_actions", self.log.read_text(encoding="utf-8"))
+
+    def test_checkov_runtime_failure_is_not_reported_as_empty_scan(self):
+        """A scanner startup error must remain a failure without a clean notice."""
+        self._install_checkov_stubs()
+        result = self._run_script("checkov-scan.sh", CHECKOV_EXIT="2")
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("::notice::", result.stdout)
 
     def test_checkov_uses_linter_config_and_propagates_failure(self):
         """Pass the Super-Linter config and keep Checkov's exit status."""

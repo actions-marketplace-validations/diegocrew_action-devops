@@ -7,7 +7,7 @@ DevOps and security checks for GitHub Actions, available two ways:
 - **Reusable workflow** (`.github/workflows/allinone.yml`): call it as a job.
   Checks run as parallel jobs, each with its own minimal permissions.
 
-Both take the same inputs, run the same checks and scripts, and share the same
+Both take the same check inputs, run the same checks and scripts, and share the same
 modes and summary. Choose the action for simplicity, or the reusable workflow
 for speed and per-check isolation.
 
@@ -46,6 +46,8 @@ called directly with the same inputs.
 | `terraform-validate.sh`, `tflint.sh`, `bicep-build.sh`, `cloudformation-lint.sh` | `iac.yml`                                                        |
 | `checkov-scan.sh`, `codeql-language.sh`, `codeql-results.py`, `github-alerts.sh` | `security.yml`                                                   |
 | `list.sh`                                                                        | Sourced by scripts that accept comma- or newline-separated lists |
+| `runtime.sh`                                                                     | Shared runner-path and Python virtualenv handling                |
+| `validate-platform.sh`                                                           | Rejects Linux-only checks on other composite-action runners      |
 | `renovate-lookup.sh`, `renovate-report.py`                                       | `dependencies.yml`                                               |
 | `create-release.sh`                                                              | `release.yml`, which publishes releases of this repository       |
 
@@ -125,10 +127,51 @@ PR merge revision), not this repository.
 - **github.com only.** The groups are called with `$/` self-repository references
   and check out scripts using `job.workflow_repository` and `job.workflow_sha`;
   neither is available on GitHub Enterprise Server.
-- **GitHub-hosted Ubuntu runners.** Jobs use `ubuntu-latest`. `$/` references need
-  runner 2.336.0 or newer, which hosted runners already have.
+- **GitHub-hosted Ubuntu, macOS, and Windows runners.** Reusable workflows accept
+  `runner` (default `ubuntu-latest`) for portable checks. The action uses the
+  calling job's runner. `$/` references need runner 2.336.0 or newer, which hosted
+  runners already have. Self-hosted runners and custom images are not certified.
 - **This repository must stay public**, because script checkouts use the caller's
   token (see [Security boundaries](#security-boundaries)).
+
+| Checks                                                                                                              | Reusable workflow | Composite action |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------- |
+| Python, Node.js, Go, .NET, Terraform, TFLint, Bicep, CloudFormation, Checkov, CodeQL, alert APIs, dependency review | Selected `runner` | Calling runner   |
+| Super-Linter, Docker builds, Trivy integration, Renovate lookups and fix PRs                                        | Always Ubuntu     | Linux only       |
+| Configuration, language-matrix preparation, result aggregation                                                      | Always Ubuntu     | Calling runner   |
+
+Linux-only integrations stay on Ubuntu even when `runner` is `macos-latest` or
+`windows-latest`. Direct callers of `build-test.yml`, `iac.yml`, and `security.yml`
+can also set `runner`. Quality and dependency workflows remain Ubuntu-only.
+CodeQL's upstream language and architecture restrictions still apply; custom
+build/test commands must be compatible with the selected OS.
+
+The composite action rejects an enabled Linux-only check on macOS/Windows as an
+invalid configuration, even in audit mode. Disable `lint`, `trivy`, and `versions`
+(all enabled by default), and leave `docker` disabled:
+
+```yaml
+jobs:
+  checks:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: diegocrew/action-devops@v1.0.0
+        with:
+          lint: "false"
+          trivy: "false"
+          versions: "false"
+          terraform: "true"
+```
+
+For the reusable workflow, set `with: { runner: windows-latest }` instead; no
+Linux-only checks need to be disabled. Ubuntu remains the default. Scripts use
+Bash, including Git Bash on Windows and the system Bash on macOS. Python is
+provisioned explicitly for internal tools (3.12), independently of
+`python-version` for the caller's tests. Bicep uses the pinned standalone CLI
+(v0.48.1), without requiring Azure CLI or Azure credentials.
 
 ## Checks
 
@@ -251,7 +294,8 @@ With the action, grant the same permissions to the job that runs it.
 Code scanning must be available for the repository (public, or GitHub Advanced
 Security / Code Security enabled). Compiled languages use autobuild; use a
 dedicated CodeQL workflow when autobuild cannot build the project. Swift is not
-supported here because CodeQL Swift analysis requires macOS runners.
+exposed by this project's language allowlist; use a dedicated CodeQL workflow on
+macOS for Swift analysis.
 
 `dependabot` and `secret-scanning` read alert APIs that `GITHUB_TOKEN` cannot
 access. Pass a fine-grained token restricted to the calling repository with only

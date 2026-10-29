@@ -16,14 +16,33 @@ concurrency:
 
 jobs:
   checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
     uses: $/.github/workflows/allinone.yml
     with:
+      runner: ${{ matrix.runner }}
       mode: restrict
       trivy: false
       iac-security: false
       versions: false
       python: true
       python-command: python -m unittest discover -s tests -v
+      node: true
+      node-command: node --version
+      go: true
+      go-version: stable
+      go-command: go version
+      dotnet: true
+      dotnet-command: dotnet --info
+      terraform: true
+      terraform-directory: tests/fixtures/iac/terraform
+      tflint: true
+      bicep: true
+      bicep-directory: tests/fixtures/iac/bicep
+      cloudformation: true
+      cloudformation-directory: tests/fixtures/iac/cloudformation
 
   audit:
     uses: $/.github/workflows/allinone.yml
@@ -33,7 +52,14 @@ jobs:
       lint: false
 
   action:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 60
     permissions:
       contents: read
@@ -42,17 +68,68 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
       - name: Run unit and fixture tests
-        run: python3 -m unittest discover -s tests -v
-      # Tests the root action from this checkout, as callers would use it.
-      - uses: ./
+        run: python -m unittest discover -s tests -v
+      # Test the workspace checkout, not a separately downloaded action.
+      - uses: ./ # zizmor: ignore[self-repository]
+        with:
+          mode: restrict
+          checkout: "false"
+          lint: "false"
+          trivy: "false"
+          versions: "false"
+          iac-security: "false"
+          node: "true"
+          node-command: node --version
+          go: "true"
+          go-version: stable
+          go-command: go version
+          dotnet: "true"
+          dotnet-command: dotnet --info
+          terraform: "true"
+          tflint: "true"
+          terraform-directory: tests/fixtures/iac/terraform
+          bicep: "true"
+          bicep-directory: tests/fixtures/iac/bicep
+          cloudformation: "true"
+          cloudformation-directory: tests/fixtures/iac/cloudformation
+      - name: Verify Checkov reports controlled findings
+        env:
+          SCRIPTS: ${{ github.workspace }}/.github/scripts
+        run: |
+          source "$SCRIPTS/runtime.sh"
+          fixture="$(mktemp -d "$RUNNER_TEMP/checkov-fixture.XXXXXX")"
+          trap 'rm -rf -- "$fixture"' EXIT
+          cp tests/fixtures/checkov/main.tf.fixture "$fixture/main.tf"
+          cd "$fixture"
+          status=0
+          bash "$SCRIPTS/checkov-scan.sh" || status=$?
+          test "$status" -eq 1
+          grep -q "Failed checks:" "$RUNNER_TEMP/checkov.log"
+      - name: Reject Linux-only action checks on other runners
+        id: action-platform
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: audit
           checkout: "false"
+          lint: "true"
+          trivy: "false"
+          versions: "false"
+          iac-security: "false"
+      - name: Assert unsupported checks were rejected
+        if: always() && runner.os != 'Linux'
+        env:
+          ACTION_OUTCOME: ${{ steps.action-platform.outcome }}
+        run: test "$ACTION_OUTCOME" = failure
       - name: Verify audit mode tolerates a controlled check failure
         id: action-audit
         continue-on-error: true
-        uses: ./
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: audit
           checkout: "false"
@@ -70,7 +147,7 @@ jobs:
       - name: Verify restrict mode rejects a controlled check failure
         id: action-restrict
         continue-on-error: true
-        uses: ./
+        uses: ./ # zizmor: ignore[self-repository]
         with:
           mode: restrict
           checkout: "false"

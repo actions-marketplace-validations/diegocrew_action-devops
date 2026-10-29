@@ -3,6 +3,10 @@ name: Security
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner label for portable checks; Trivy always uses Ubuntu
+        type: string
+        default: ubuntu-latest
       mode:
         description: "audit or advanced (report) or restrict (fail)"
         type: string
@@ -106,7 +110,7 @@ jobs:
   iac-security:
     needs: mode
     if: inputs.iac-security
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -129,6 +133,9 @@ jobs:
         run: |
           mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
           rm -rf .action-devops
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
       - name: Scan infrastructure as code
         run: '"$RUNNER_TEMP/action-devops-scripts/checkov-scan.sh"'
 
@@ -165,7 +172,7 @@ jobs:
   codeql-analyze:
     needs: [mode, codeql-languages]
     if: inputs.codeql && needs.codeql-languages.outputs.languages != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     strategy:
@@ -233,7 +240,7 @@ jobs:
   dependabot:
     needs: mode
     if: inputs.dependabot
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 10
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions: {}
@@ -262,7 +269,7 @@ jobs:
   dependency-review:
     needs: mode
     if: inputs.dependency-review && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 10
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -281,7 +288,7 @@ jobs:
   secret-scanning:
     needs: mode
     if: inputs.secret-scanning
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 10
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions: {}

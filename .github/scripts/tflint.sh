@@ -16,11 +16,7 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-mapfile -t roots < <(split_list "${TF_DIRECTORY:-}")
-if ((${#roots[@]} == 0)); then
-  echo "::error::terraform-directory must name at least one root module"
-  exit 1
-fi
+load_terraform_roots || exit 1
 
 failed=()
 for root in "${roots[@]}"; do
@@ -42,4 +38,4 @@ for root in "${roots[@]}"; do
     failed+=("$root")
   fi
 done
-((${#failed[@]} == 0))
+[[ -z "${failed[*]-}" ]]

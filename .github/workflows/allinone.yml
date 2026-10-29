@@ -6,6 +6,10 @@ name: All-in-one DevOps and security
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner label for portable checks; Linux-only checks and control jobs stay on Ubuntu
+        type: string
+        default: ubuntu-latest
       mode:
         description: "audit (report), restrict (fail), or advanced (report and attempt dependency PRs)"
         type: string
@@ -204,6 +208,7 @@ jobs:
       contents: read
     uses: $/.github/workflows/build-test.yml
     with:
+      runner: ${{ inputs.runner }}
       mode: ${{ inputs.mode }}
       python: ${{ inputs.python }}
       docker: ${{ inputs.docker }}
@@ -229,6 +234,7 @@ jobs:
       contents: read
     uses: $/.github/workflows/iac.yml
     with:
+      runner: ${{ inputs.runner }}
       mode: ${{ inputs.mode }}
       terraform: ${{ inputs.terraform }}
       tflint: ${{ inputs.tflint }}
@@ -249,6 +255,7 @@ jobs:
       inputs.dependabot || inputs.dependency-review || inputs.secret-scanning
     uses: $/.github/workflows/security.yml
     with:
+      runner: ${{ inputs.runner }}
       mode: ${{ inputs.mode }}
       trivy: ${{ inputs.trivy }}
       iac-security: ${{ inputs.iac-security }}

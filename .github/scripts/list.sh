@@ -10,3 +10,16 @@ split_list() {
   done < <(tr ',' '\n' <<<"$1")
   return 0
 }
+
+# Shared Terraform/TFLint root parsing; roots is consumed by the calling script.
+load_terraform_roots() {
+  local root
+  roots=()
+  while IFS= read -r root; do
+    roots+=("$root")
+  done < <(split_list "${TF_DIRECTORY:-}")
+  if [[ -z "${roots[*]-}" ]]; then
+    echo "::error::terraform-directory must name at least one root module"
+    return 1
+  fi
+}

@@ -3,6 +3,10 @@ name: Infrastructure as code
 on:
   workflow_call:
     inputs:
+      runner:
+        description: Runner label for portable checks
+        type: string
+        default: ubuntu-latest
       mode:
         description: "audit or advanced (report) or restrict (fail)"
         type: string
@@ -74,7 +78,7 @@ jobs:
   terraform:
     needs: mode
     if: inputs.terraform
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -109,7 +113,7 @@ jobs:
   tflint:
     needs: mode
     if: inputs.tflint
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -151,7 +155,7 @@ jobs:
   bicep:
     needs: mode
     if: inputs.bicep
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -182,7 +186,7 @@ jobs:
   cloudformation:
     needs: mode
     if: inputs.cloudformation
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
     continue-on-error: ${{ inputs.mode != 'restrict' }}
     permissions:
@@ -205,6 +209,9 @@ jobs:
         run: |
           mv .action-devops/.github/scripts "$RUNNER_TEMP/action-devops-scripts"
           rm -rf .action-devops
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
       - name: Lint CloudFormation templates
         env:
           CFN_DIRECTORY: ${{ inputs.cloudformation-directory }}

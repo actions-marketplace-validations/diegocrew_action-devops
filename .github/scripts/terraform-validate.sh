@@ -7,11 +7,9 @@ set -uo pipefail
 export TF_IN_AUTOMATION=true TF_INPUT=false
 # shellcheck source=SCRIPTDIR/list.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/list.sh"
-mapfile -t roots < <(split_list "${TF_DIRECTORY:-}")
-if ((${#roots[@]} == 0)); then
-  echo "::error::terraform-directory must name at least one root module"
-  exit 1
-fi
+# shellcheck source=SCRIPTDIR/runtime.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/runtime.sh"
+load_terraform_roots || exit 1
 
 failed=()
 for root in "${roots[@]}"; do
@@ -42,4 +40,4 @@ done
   printf '## Terraform\n\n| Root | Result |\n| --- | --- |\n'
   cat "$RUNNER_TEMP/terraform-results.md"
 } >>"$GITHUB_STEP_SUMMARY"
-((${#failed[@]} == 0))
+[[ -z "${failed[*]-}" ]]
